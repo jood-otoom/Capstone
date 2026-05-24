@@ -1,0 +1,26 @@
+from ultralytics import YOLO
+
+def test_on_video():
+    # 1. Load your custom trained weights
+    # Make sure this path matches where your run was saved!
+    model_path = 'runs/detect/accident_detection/yolov8s_quick/weights/best.pt'
+    model = YOLO(model_path)
+    
+    # 2. Define the input video
+    input_video = 'data/testing1.mp4' # Adjust path if your video is somewhere else
+    
+    # 3. Run prediction
+    print(f"Running inference on {input_video}...")
+    results = model.predict(
+        source=input_video,
+        conf=0.50,          # Minimum confidence score to trigger a box (check your F1 curve for the optimal number)
+        show=False,         # Set to True to watch live (may not work in all environments)
+        save=True,          # Saves the annotated video to a new folder
+        project='runs/detect',
+        name='video_predictions'
+    )
+    
+    print("✓ Inference complete! Check the 'runs/detect/video_predictions' folder for your output video.")
+
+if __name__ == '__main__':
+    test_on_video()

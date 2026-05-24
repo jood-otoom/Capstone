@@ -1,0 +1,213 @@
+import os
+import cv2
+import albumentations as A
+from tqdm import tqdm
+
+# ==========================================
+# 1. Configuration & Paths
+# ==========================================
+INPUT_DIR = "C:\\Desktop\\images_preprocessing\\data" 
+OUTPUT_DIR = "./processed_dataset"
+
+SPLITS = ['train', 'valid', 'test']
+
+IMG_SIZE = 640 
+TARGET_CLASS = 0 
+
+# ==========================================
+# 2. Augmentation Pipeline
+# ==========================================
+# Augmentation ONLY for training set
+transform_train = A.Compose([
+    A.Resize(height=IMG_SIZE, width=IMG_SIZE),
+    
+    A.OneOf([
+        A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=1.0), 
+        A.RandomGamma(gamma_limit=(80, 120), p=1.0), 
+    ], p=0.5),
+    
+    A.OneOf([
+        A.MotionBlur(blur_limit=5, p=1.0), 
+        A.GaussNoise(p=1.0), 
+        A.PixelDropout(dropout_prob=0.01, p=1.0) 
+    ], p=0.4),
+    
+], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'], min_area=1024, min_visibility=0.1))
+
+# Resize ONLY for validation and test sets (no augmentation)
+transform_valid = A.Compose([
+    A.Resize(height=IMG_SIZE, width=IMG_SIZE),
+], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'], min_area=1024, min_visibility=0.1))
+
+
+# ==========================================
+# 3. Processing Logic
+# ==========================================
+def process_dataset():
+    for split in SPLITS:
+        print(f"Processing {split} split...")
+        
+        img_in_dir = os.path.join(INPUT_DIR, split, 'images')
+        lbl_in_dir = os.path.join(INPUT_DIR, split, 'labels')
+        
+        img_out_dir = os.path.join(OUTPUT_DIR, split, 'images')
+        lbl_out_dir = os.path.join(OUTPUT_DIR, split, 'labels')
+        
+        os.makedirs(img_out_dir, exist_ok=True)
+        os.makedirs(lbl_out_dir, exist_ok=True)
+        
+        if not os.path.exists(img_in_dir):
+            continue
+        
+        # Collect all image files (recursively for test split with subdirectories)
+        img_files = []
+        if split == 'test':
+            # For test set: recursively search through subdirectories (Accident, Non Accident, etc.)
+            for root, dirs, files in os.walk(img_in_dir):
+                for file in files:
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        img_files.append(os.path.join(root, file))
+        else:
+            # For train/valid: look only in the images directory
+            for file in os.listdir(img_in_dir):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    img_files.append(os.path.join(img_in_dir, file))
+        
+        for img_path in tqdm(img_files):
+            img_name = os.path.basename(img_path)
+            
+            # FIX 3: Added to extract just the file name without the extension
+            lbl_name = os.path.splitext(img_name)[0] + '.txt'
+            lbl_path = os.path.join(lbl_in_dir, lbl_name)
+            
+            image = cv2.imread(img_path)
+            if image is None:
+                continue
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # For train and valid splits: skip images without labels or with empty labels
+            if split in ['train', 'valid']:
+                if not os.path.exists(lbl_path):
+                    continue
+                
+                bboxes = []
+                class_labels = []
+                
+                with open(lbl_path, 'r') as f:
+                    lines = f.readlines()
+                    # Skip if label file is empty
+                    if not lines or all(line.strip() == '' for line in lines):
+                        continue
+                        
+                    for line in lines:
+                        if line.strip() == '':
+                            continue
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            try:
+                                x_c, y_c, w, h = map(float, parts[1:5])
+                                # Normalize coordinates to [0.0, 1.0]
+                                x_c = max(0.0, min(x_c, 1.0))
+                                y_c = max(0.0, min(y_c, 1.0))
+                                w = max(0.0, min(w, 1.0))
+                                h = max(0.0, min(h, 1.0))
+                                
+                                bboxes.append([x_c, y_c, w, h])
+                                class_labels.append(TARGET_CLASS) 
+                            except ValueError:
+                                continue
+                
+                # Skip if no valid bboxes were found
+                if not bboxes or not class_labels:
+                    continue
+            else:
+                # For test split: process without labels
+                bboxes = []
+                class_labels = []
+            
+            # Select appropriate transform based on split
+            transform = transform_train if split == 'train' else transform_valid
+            
+            try:
+                transformed = transform(image=image, bboxes=bboxes, class_labels=class_labels)
+                transformed_image = transformed['image']
+                transformed_bboxes = transformed['bboxes']
+                transformed_class_labels = transformed['class_labels']
+            except Exception as e:
+                print(f"\nSkipping {img_name} due to transformation error: {e}")
+                continue
+            
+            # Ensure all coordinates are properly normalized after transformation
+            normalized_bboxes = []
+            for bbox in transformed_bboxes:
+                # Clamp to [0, 1] range
+                x_c = max(0.0, min(bbox[0], 1.0))
+                y_c = max(0.0, min(bbox[1], 1.0))
+                w = max(0.0, min(bbox[2], 1.0))
+                h = max(0.0, min(bbox[3], 1.0))
+                normalized_bboxes.append([x_c, y_c, w, h])
+            transformed_bboxes = normalized_bboxes
+            
+            transformed_image = cv2.cvtColor(transformed_image, cv2.COLOR_RGB2BGR)
+            
+            # For test split, preserve subdirectory structure (Accident, Non Accident, etc.)
+            if split == 'test':
+                rel_path = os.path.relpath(img_path, img_in_dir)
+                out_img_path = os.path.join(img_out_dir, rel_path)
+                os.makedirs(os.path.dirname(out_img_path), exist_ok=True)
+            else:
+                out_img_path = os.path.join(img_out_dir, img_name)
+            
+            cv2.imwrite(out_img_path, transformed_image)
+            
+            # Save transformed labels with normalized coordinates (only if labels exist)
+            if transformed_bboxes and transformed_class_labels:
+                out_lbl_path = os.path.join(lbl_out_dir, lbl_name)
+                with open(out_lbl_path, 'w') as f:
+                    for bbox, cls in zip(transformed_bboxes, transformed_class_labels):
+                        # Write in YOLO format with 6 decimal places for precision
+                        f.write(f"{int(cls)} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f}\n")
+
+def count_images_in_folders(show_input=False):
+    print("\n" + "="*50)
+    if show_input:
+        print("INPUT Image Count Summary:")
+        for split in SPLITS:
+            img_dir = os.path.join(INPUT_DIR, split, 'images')
+            if os.path.exists(img_dir):
+                count = 0
+                # For test split, count recursively through subdirectories
+                if split == 'test':
+                    for root, dirs, files in os.walk(img_dir):
+                        for file in files:
+                            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                count += 1
+                else:
+                    count = len([f for f in os.listdir(img_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+                print(f"{split.upper()}: {count} images")
+            else:
+                print(f"{split.upper()}: 0 images (folder not found)")
+    else:
+        print("OUTPUT Image Count Summary:")
+        for split in SPLITS:
+            img_dir = os.path.join(OUTPUT_DIR, split, 'images')
+            if os.path.exists(img_dir):
+                count = 0
+                # Count recursively through all subdirectories
+                for root, dirs, files in os.walk(img_dir):
+                    for file in files:
+                        if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                            count += 1
+                print(f"{split.upper()}: {count} images")
+            else:
+                print(f"{split.upper()}: 0 images (folder not found)")
+    print("="*50 + "\n")
+
+if __name__ == "__main__":
+    print("Starting Preprocessing Pipeline...")
+    print("\nBEFORE Preprocessing (INPUT data):")
+    count_images_in_folders(show_input=True)
+    process_dataset()
+    print("\nAFTER Preprocessing (OUTPUT data):")
+    count_images_in_folders(show_input=False)
+    print("Preprocessing Complete. Data is ready for YOLO training.")

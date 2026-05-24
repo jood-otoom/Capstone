@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+yolov8_env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# YOLO / Ultralytics outputs
+runs/
+full_runs/
+*.pt
+*.onnx
+*.engine
+
+# Datasets / large data
+data_raw_or_original/
+data_processed/
+data_small/
+archives/
+*.zip
+*.rar
+*.7z
+
+# Logs and cache
+*.log
+.cache/
+.ultralytics/
+wandb/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep final lightweight results if you create this folder
+!final_results/
+!final_results/** 
+
+yolov8_env/
+.ultralytics/
+__pycache__/
+*.pyc
