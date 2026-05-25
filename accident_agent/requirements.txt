@@ -1,0 +1,13 @@
+streamlit
+langchain
+sentence-transformers
+langchain-huggingface
+langchain-openai
+langchain-community
+netwerkx
+faiss-cpu
+pypdf
+pdfplumber
+tiktoken
+python-dotenv
+opencv-python-headless
