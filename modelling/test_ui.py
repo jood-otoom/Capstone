@@ -27,6 +27,123 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 print(f"Dynamic Project Root: {PROJECT_ROOT}")
 
+# Dynamically add accident_agent to sys.path
+AGENT_DIR = PROJECT_ROOT / "accident_agent"
+if str(AGENT_DIR) not in sys.path:
+    sys.path.insert(0, str(AGENT_DIR))
+
+# Ensure required libraries are installed
+for lib_name, import_name in [
+    ("langchain", "langchain"),
+    ("sentence-transformers", "sentence_transformers"),
+    ("langchain-huggingface", "langchain_huggingface"),
+    ("langchain-openai", "langchain_openai"),
+    ("langchain-community", "langchain_community"),
+    ("networkx", "networkx"),
+    ("faiss-cpu", "faiss"),
+    ("pypdf", "pypdf"),
+    ("pdfplumber", "pdfplumber"),
+    ("python-dotenv", "dotenv")
+]:
+    try:
+        __import__(import_name)
+    except ImportError:
+        print(f"[Self-Healing] Missing dependency '{lib_name}'. Installing...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", lib_name])
+        except Exception as e:
+            print(f"[Self-Healing WARNING] Failed to auto-install {lib_name}: {e}")
+
+try:
+    import dotenv
+    dotenv.load_dotenv(dotenv_path=str(AGENT_DIR / ".env"))
+except Exception as e:
+    print(f"Error loading agent env: {e}")
+
+class APIKeyManager:
+    def __init__(self):
+        self.keys = [
+            "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",
+            "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"
+        ]
+        self.current_index = 0
+
+    def get_current_key(self) -> str:
+        return self.keys[self.current_index]
+
+    def rotate_key(self) -> str:
+        self.current_index = (self.current_index + 1) % len(self.keys)
+        os.environ["OPENROUTER_API_KEY"] = self.keys[self.current_index]
+        try:
+            from app.core.config import settings
+            settings.OPENROUTER_API_KEY = self.keys[self.current_index]
+        except Exception:
+            pass
+        print(f"[APIKeyManager] Credit exhausted or API key failed. Rotated to key index: {self.current_index}")
+        return self.keys[self.current_index]
+
+api_key_manager = APIKeyManager()
+# Initialize environment keys
+os.environ["OPENROUTER_API_KEY"] = api_key_manager.get_current_key()
+os.environ["HF_TOKEN"] = "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"
+
+def safe_agent_call(agent, method_name, *args, **kwargs):
+    last_err = None
+    for attempt in range(len(api_key_manager.keys)):
+        current_key = api_key_manager.get_current_key()
+        os.environ["OPENROUTER_API_KEY"] = current_key
+        try:
+            from app.core.config import settings
+            settings.OPENROUTER_API_KEY = current_key
+        except Exception:
+            pass
+            
+        # Update LLM dynamically if it exists
+        if agent and hasattr(agent, "llm") and agent.llm:
+            if hasattr(agent.llm, "openai_api_key"):
+                agent.llm.openai_api_key = current_key
+            if hasattr(agent.llm, "api_key"):
+                agent.llm.api_key = current_key
+
+        try:
+            method = getattr(agent, method_name)
+            return method(*args, **kwargs)
+        except Exception as e:
+            last_err = e
+            err_msg = str(e).lower()
+            print(f"[safe_agent_call] Attempt {attempt+1} using key index {api_key_manager.current_index} failed: {e}")
+            
+            # Rotate key on credit or auth failures
+            is_credit_or_auth = any(word in err_msg for word in [
+                "credit", "balance", "insufficient", "payment", "402", "unauthorized", "api_key", "401", "403"
+            ])
+            if is_credit_or_auth:
+                api_key_manager.rotate_key()
+            else:
+                raise e
+    raise RuntimeError(f"All API keys failed or exhausted credit. Last error: {last_err}")
+
+def get_accident_agent():
+    """
+    Safely load and instantiate the AccidentAgent.
+    Returns the agent instance or raises descriptive errors.
+    """
+    agent_path = PROJECT_ROOT / "accident_agent"
+    if not agent_path.exists():
+        raise FileNotFoundError(f"Accident Agent folder is missing at: {agent_path}")
+
+    required_files = ["app/services/agent_service.py", "app/core/graph_logic.py", "app/core/prompts.py"]
+    for rf in required_files:
+        p = agent_path / rf
+        if not p.exists():
+            raise FileNotFoundError(f"Accident Agent is missing crucial file: {rf}")
+
+    os.environ["OPENROUTER_API_KEY"] = api_key_manager.get_current_key()
+    
+    from app.services.agent_service import AccidentAgent
+    return AccidentAgent()
+
+
 
 def get_media_label(source: str) -> str:
     return "Video Analysis" if source == "video" else "Image Analysis"
@@ -107,14 +224,271 @@ def find_best_model() -> Path:
     return None
 
 
-# Load Model Globally
-BEST_MODEL_PATH = find_best_model()
-print(f"Loaded Best Model Path: {BEST_MODEL_PATH}")
+# Model Directory Path Constants
+DETECTION_MODEL_DIR = Path(r"C:\Capstone\full_runs\train_runs\yolo26m_lr0001_sgd")
+CLASSIFICATION_MODEL_DIR = Path(r"C:\Capstone\Classification\best_severity_classifier")
 
-if BEST_MODEL_PATH and BEST_MODEL_PATH.exists():
-    model = YOLO(str(BEST_MODEL_PATH))
-else:
+
+def find_best_pt(model_dir: Path) -> Path:
+    """
+    Finds the correct YOLO weights in model_dir.
+    Checks model_dir / "weights" / "best.pt", then model_dir / "best.pt",
+    then checks if a "best" folder exists to zip it back to "best.pt",
+    then recursively searches for best.pt. Raises FileNotFoundError if not found.
+    """
+    model_dir = Path(model_dir)
+    
+    # 1. Prefer model_dir / "weights" / "best.pt"
+    path1 = model_dir / "weights" / "best.pt"
+    if path1.exists():
+        return path1
+        
+    # 2. Check model_dir / "best.pt"
+    path2 = model_dir / "best.pt"
+    if path2.exists():
+        return path2
+
+    # 3. Check if an unzipped "best" directory exists and needs to be zipped to "best.pt"
+    best_dir = model_dir / "best"
+    if best_dir.exists() and best_dir.is_dir():
+        import zipfile
+        import os
+        print(f"[Pipeline] Found unzipped weights folder at {best_dir}. Automatically zipping to {path2}...")
+        try:
+            with zipfile.ZipFile(path2, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(best_dir):
+                    for file in files:
+                        file_path = Path(root) / file
+                        archive_name = file_path.relative_to(best_dir.parent)
+                        zipf.write(file_path, archive_name)
+            print(f"[Pipeline] Successfully zipped weights to {path2}")
+            return path2
+        except Exception as e:
+            print(f"[Pipeline] Error zipping weights: {e}")
+            
+    # 4. Recursively search for best.pt
+    matches = list(model_dir.rglob("best.pt"))
+    if matches:
+        return matches[0]
+        
+    raise FileNotFoundError(f"Could not find best.pt weights in {model_dir}")
+
+
+def format_severity_label(label: str) -> str:
+    """Formats raw severity labels into clean title-cased strings for the UI."""
+    if not label:
+        return "N/A"
+    if label in ["Model not found", "Not Applied", "Classification Failed"]:
+        return label
+    return label.replace("-", " ").title()
+
+
+def build_pipeline_status_banner(
+    accident_detected: bool,
+    detection_conf: float,
+    severity_label: str,
+    severity_conf: float,
+    num_detections: int = 0,
+    source: str = "image",
+    processed_video_path: str = None
+) -> str:
+    """Generates a premium, highly detailed HTML dashboard banner for sequential pipeline results."""
+    tone = "alert" if accident_detected else "safe"
+    icon = "&#9888;" if accident_detected else "&#10003;"
+    
+    title = "Accident Detected" if accident_detected else "No Accident Detected"
+    
+    det_result = "Accident" if accident_detected else "No Accident"
+    det_conf_str = f"{detection_conf * 100:.1f}%" if accident_detected else "-"
+    
+    formatted_sev = format_severity_label(severity_label)
+    sev_conf_str = f"{severity_conf * 100:.1f}%" if (accident_detected and severity_label not in ["Model not found", "Not Applied", "Classification Failed"]) else "-"
+    
+    # Extra statistics text
+    if accident_detected:
+        if source == "video":
+            msg = f"Sequential pipeline completed: accident detected in {num_detections} frame(s)."
+        else:
+            msg = f"Sequential pipeline completed: {num_detections} accident-related object(s) detected."
+    else:
+        msg = "Inference completed and no accident class was detected above the selected confidence threshold."
+
+    video_stats_html = ""
+    if source == "video" and processed_video_path:
+        video_stats_html = f"""
+        <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, 0.08); font-size: 0.9rem; opacity: 0.95;">
+            &#128253; <b>Video Stats:</b> Detected in <b>{num_detections}</b> frame(s). 
+            Processed video saved to: <code style="font-size: 0.82rem; word-break: break-all; background: rgba(255, 255, 255, 0.5); padding: 2px 6px; border-radius: 4px; font-family: monospace;">{escape(processed_video_path)}</code>
+        </div>
+        """
+
+    return f"""
+    <div class="status-banner tone-{tone}" role="status" aria-live="polite" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 14px; width: 100%;">
+            <div class="status-icon">{icon}</div>
+            <div class="status-copy" style="flex: 1;">
+                <p class="status-label" style="font-size: 1.15rem; font-weight: 800; margin: 0;">{title}</p>
+                <p class="status-message" style="margin: 4px 0 0; font-size: 0.92rem; opacity: 0.9;">{escape(msg)}</p>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: 100%; margin-top: 4px;">
+            <div style="background: rgba(255, 255, 255, 0.82); color: #1e3a8a !important; padding: 12px 16px; border-radius: 14px; border: 1px solid rgba(30, 58, 138, 0.15); display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.78rem; text-transform: uppercase; font-weight: 800; opacity: 0.75; letter-spacing: 0.04em; color: #1e3a8a !important;">Accident Detection Result</span>
+                <span style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a !important;">{escape(det_result)}</span>
+                <span style="font-size: 0.88rem; font-weight: 600; opacity: 0.9; margin-top: 4px; color: #1e3a8a !important;">Confidence: <b style="color: #1e3a8a !important;">{det_conf_str}</b></span>
+            </div>
+            
+            <div style="background: rgba(255, 255, 255, 0.82); color: #1e3a8a !important; padding: 12px 16px; border-radius: 14px; border: 1px solid rgba(30, 58, 138, 0.15); display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.78rem; text-transform: uppercase; font-weight: 800; opacity: 0.75; letter-spacing: 0.04em; color: #1e3a8a !important;">Severity Classification Result</span>
+                <span style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a !important;">{escape(formatted_sev)}</span>
+                <span style="font-size: 0.88rem; font-weight: 600; opacity: 0.9; margin-top: 4px; color: #1e3a8a !important;">Confidence: <b style="color: #1e3a8a !important;">{sev_conf_str}</b></span>
+            </div>
+        </div>
+        
+        {video_stats_html}
+    </div>
+    """
+
+
+class AccidentSeverityPipeline:
+    """
+    Unified accident detection and severity classification sequential pipeline.
+    Ensures safe error handling, automatic weight resolving, zipping and fallbacks.
+    """
+    def __init__(self):
+        self.detector = None
+        self.classifier = None
+        self.detector_path = None
+        self.classifier_path = None
+        self.classifier_missing = False
+
+    def load_models(self):
+        # 1. Resolve and Load Detection Model
+        print("[Pipeline] Resolving accident detection weights...")
+        try:
+            self.detector_path = find_best_pt(DETECTION_MODEL_DIR)
+            print(f"[Pipeline] Resolved detection weights to: {self.detector_path}")
+            self.detector = YOLO(str(self.detector_path))
+            print("[Pipeline] Accident detection model loaded successfully!")
+        except Exception as e:
+            print(f"[Pipeline] ERROR loading detection model: {e}")
+            self.detector = None
+            raise e
+
+        # 2. Resolve and Load Severity Classification Model
+        print("[Pipeline] Resolving accident severity classification weights...")
+        try:
+            self.classifier_path = find_best_pt(CLASSIFICATION_MODEL_DIR)
+            print(f"[Pipeline] Resolved classification weights to: {self.classifier_path}")
+            self.classifier = YOLO(str(self.classifier_path))
+            print("[Pipeline] Severity classification model loaded successfully!")
+            self.classifier_missing = False
+        except Exception as e:
+            print(f"[Pipeline] WARNING: Classification model could not be loaded: {e}. Accident detection remains active.")
+            self.classifier = None
+            self.classifier_missing = True
+
+    def detect_accident(self, frame, conf_threshold):
+        if self.detector is None:
+            raise RuntimeError("Detection model is not loaded.")
+        results = self.detector(frame, conf=conf_threshold, verbose=False)
+        accident_detected = detect_accident_from_collection(results)
+        
+        max_conf = 0.0
+        if results and len(results) > 0:
+            boxes = getattr(results[0], "boxes", None)
+            if boxes is not None and len(boxes) > 0:
+                max_conf = float(boxes.conf.max().item())
+                
+        return results, accident_detected, max_conf
+
+    def classify_severity(self, frame_or_crop):
+        if self.classifier_missing or self.classifier is None:
+            return "Model not found", 0.0
+            
+        try:
+            if frame_or_crop is None or frame_or_crop.size == 0 or frame_or_crop.shape[0] < 5 or frame_or_crop.shape[1] < 5:
+                raise ValueError("Crop is invalid or too small for classification.")
+                
+            results = self.classifier(frame_or_crop, verbose=False)
+            if results and len(results) > 0:
+                probs = results[0].probs
+                pred_idx = int(probs.top1)
+                confidence = float(probs.top1conf.item())
+                
+                class_names = results[0].names
+                raw_label = class_names[pred_idx]
+                return raw_label, confidence
+            else:
+                raise ValueError("Classifier returned empty results.")
+        except Exception as crop_error:
+            print(f"[Pipeline] Classification on crop failed: {crop_error}.")
+            return None, 0.0
+
+    def process_image(self, image_path_or_array, conf_threshold):
+        """Sequential inference for image uploads."""
+        results, accident_detected, max_conf = self.detect_accident(image_path_or_array, conf_threshold)
+        
+        severity_label = "Not Applied"
+        severity_conf = 0.0
+        annotated_image = results[0].plot() if results else image_path_or_array
+        
+        if accident_detected:
+            best_crop = None
+            highest_conf = 0.0
+            
+            if results and len(results) > 0:
+                boxes = getattr(results[0], "boxes", None)
+                if boxes is not None and len(boxes) > 0:
+                    for box in boxes:
+                        conf = float(box.conf[0].item())
+                        if conf > highest_conf:
+                            highest_conf = conf
+                            try:
+                                xyxy = box.xyxy[0].cpu().numpy()
+                                x1, y1, x2, y2 = map(int, xyxy)
+                                orig_img = results[0].orig_img
+                                if orig_img is not None:
+                                    best_crop = orig_img[y1:y2, x1:x2]
+                            except Exception as e:
+                                print(f"[Pipeline] Error cropping detection: {e}")
+            
+            # Classify crop
+            label = None
+            conf_val = 0.0
+            if best_crop is not None:
+                label, conf_val = self.classify_severity(best_crop)
+                
+            # Fallback to full frame
+            if label is None:
+                print("[Pipeline] Falling back to classifying full frame...")
+                label, conf_val = self.classify_severity(image_path_or_array)
+                
+            severity_label = label if label else "Classification Failed"
+            severity_conf = conf_val
+            
+        return {
+            "accident_detected": accident_detected,
+            "detection_confidence": max_conf,
+            "severity_label": severity_label,
+            "severity_confidence": severity_conf,
+            "annotated_image": annotated_image,
+            "num_detections": len(results[0].boxes) if (results and getattr(results[0], "boxes", None) is not None) else 0
+        }
+
+
+# Initialize Unified Pipeline Globally
+pipeline = AccidentSeverityPipeline()
+try:
+    pipeline.load_models()
+    model = pipeline.detector
+    BEST_MODEL_PATH = pipeline.detector_path
+except Exception as init_err:
+    print(f"CRITICAL: Failed to load pipeline models: {init_err}")
     model = None
+    BEST_MODEL_PATH = None
+
 
 
 def build_status_banner(title: str, message: str, tone: str, icon: str) -> str:
@@ -720,8 +1094,12 @@ def build_alert_controller_head() -> str:
             this.signalObserver.disconnect();
           }
           window.clearTimeout(this.attachTimer);
-          if (this.audioContext && typeof this.audioContext.close === "function" && this.audioContext.state !== "closed") {
-            this.audioContext.close().catch(() => {});
+          try {
+            if (this.audioContext && typeof this.audioContext.close === "function" && this.audioContext.state !== "closed") {
+              this.audioContext.close().catch(() => {});
+            }
+          } catch (error) {
+            console.warn("AudioContext close failed:", error);
           }
         },
       };
@@ -740,10 +1118,10 @@ def build_alert_controller_head() -> str:
 
 
 def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
-    if model is None:
+    if pipeline.detector is None:
         return input_image, build_status_banner(
             title="Model unavailable",
-            message="No model was loaded. Please check the configured model paths.",
+            message="No object detection model was loaded. Please check the configured model paths.",
             tone="alert",
             icon="&#10005;",
         ), build_alert_banner("error", "image"), build_alert_signal(False, "error", "image")
@@ -756,34 +1134,45 @@ def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
             icon="&#8682;",
         ), build_alert_banner("standby", "image"), build_alert_signal(False, "idle", "image")
 
-    # Inference
-    results = model(input_image, conf=conf_threshold)
-
-    # Render Bounding Boxes
-    rendered_image = results[0].plot()
-
-    accident_detected = detect_accident_from_collection(results)
-
-    if accident_detected:
-        status_html = build_status_banner(
-            title="Accident detected",
-            message="The selected model found at least one accident-related detection in the uploaded image.",
+    try:
+        # Run sequential pipeline
+        res = pipeline.process_image(input_image, conf_threshold)
+        
+        accident_detected = res["accident_detected"]
+        det_conf = res["detection_confidence"]
+        sev_label = res["severity_label"]
+        sev_conf = res["severity_confidence"]
+        annotated_image = res["annotated_image"]
+        num_detections = res["num_detections"]
+        
+        status_html = build_pipeline_status_banner(
+            accident_detected=accident_detected,
+            detection_conf=det_conf,
+            severity_label=sev_label,
+            severity_conf=sev_conf,
+            num_detections=num_detections,
+            source="image"
+        )
+        
+        if accident_detected:
+            alert_html = build_alert_banner("active", "image")
+            alert_signal = build_alert_signal(True, "accident", "image")
+        else:
+            alert_html = build_alert_banner("clear", "image")
+            alert_signal = build_alert_signal(False, "clear", "image")
+            
+        return annotated_image, status_html, alert_html, alert_signal
+        
+    except Exception as e:
+        print(f"[IMAGE] Inference failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return input_image, build_status_banner(
+            title="Inference failed",
+            message=f"Error occurred during image inference: {str(e)}",
             tone="alert",
-            icon="&#9888;",
-        )
-        alert_html = build_alert_banner("active", "image")
-        alert_signal = build_alert_signal(True, "accident", "image")
-    else:
-        status_html = build_status_banner(
-            title="No accident detected",
-            message="Inference completed and no accident class was detected above the selected confidence threshold.",
-            tone="safe",
-            icon="&#10003;",
-        )
-        alert_html = build_alert_banner("clear", "image")
-        alert_signal = build_alert_signal(False, "clear", "image")
-
-    return rendered_image, status_html, alert_html, alert_signal
+            icon="&#10005;",
+        ), build_alert_banner("error", "image"), build_alert_signal(False, "error", "image")
 
 
 def handle_image_upload(image: np.ndarray | None):
@@ -859,12 +1248,134 @@ def handle_video_clear():
     )
 
 
-def run_image_inference(input_image: np.ndarray, conf_threshold: float):
+def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_history, agent):
     """
-    Handles image inference input from the UI.
-    This function should not modify models.
+    Unified image pipeline + AI agent generator flow.
     """
-    return predict_accident_gui(input_image, conf_threshold)
+    import cv2
+    
+    # Step 1: Run YOLO pipeline
+    try:
+        annotated_image, status_html, alert_html, alert_signal = predict_accident_gui(input_image, conf_threshold)
+    except Exception as e:
+        print(f"[Image Inference] YOLO pipeline failed: {e}")
+        chat_history = chat_history or []
+        yield (
+            input_image,
+            build_status_banner("Inference Failed", f"YOLO error: {e}", "alert", "&#10005;"),
+            build_alert_banner("error", "image"),
+            build_alert_signal(False, "error", "image"),
+            render_chat_html(chat_history),
+            gr.update(interactive=False, placeholder="Inference failed."),
+            gr.update(interactive=False, value="Locked"),
+            agent,
+            chat_history
+        )
+        return
+
+    # Check if accident was detected
+    accident_detected = "ACCIDENT DETECTED" in alert_html
+
+    # If no accident is detected
+    if not accident_detected:
+        chat_history = chat_history or []
+        yield (
+            annotated_image,
+            status_html,
+            alert_html,
+            alert_signal,
+            render_chat_html(chat_history),
+            gr.update(interactive=True, placeholder="Ask the legal assistant general questions..."),
+            gr.update(interactive=True, value="Send"),
+            agent,
+            chat_history
+        )
+        return
+
+    # If accident is detected, we perform AI analysis sequentially
+    chat_history = chat_history or []
+    yield (
+        annotated_image,
+        build_status_banner(
+            title="Analyzing accident with AI agent...",
+            message="Accident detected! Sending scene metadata and crop to Traffic Liability Engine...",
+            tone="neutral",
+            icon="&#9711;",
+        ),
+        alert_html,
+        alert_signal,
+        render_chat_html(chat_history),
+        gr.update(interactive=False, placeholder="Analyzing accident with AI agent..."),
+        gr.update(interactive=False, value="Analyzing..."),
+        agent,
+        chat_history
+    )
+
+    # Step 2: Initialize Agent safely
+    if not agent:
+        try:
+            print("[Agent] Initializing AccidentAgent...")
+            agent = get_accident_agent()
+        except Exception as e:
+            print(f"[Agent] Initialization failed: {e}")
+            chat_history = chat_history or []
+            chat_history.append(("Assistant", f"❌ Failed to load AI Agent folder or configs: {str(e)}"))
+            yield (
+                annotated_image,
+                status_html,
+                alert_html,
+                alert_signal,
+                render_chat_html(chat_history),
+                gr.update(interactive=False, placeholder="Agent offline. Config missing."),
+                gr.update(interactive=False, value="Locked"),
+                agent,
+                chat_history
+            )
+            return
+
+    # Save current frame to temporary file for Vision Model analysis
+    temp_path = os.path.join(str(PROJECT_ROOT), "accident_agent", "temp_input.jpg")
+    try:
+        bgr_img = cv2.cvtColor(input_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(temp_path, bgr_img)
+    except Exception as e:
+        print(f"[Agent] Failed to save temporary image frame: {e}")
+        temp_path = os.path.join(str(PROJECT_ROOT), "accident_agent", "temp_input.jpg")
+
+    # Step 3: Run AI agent analysis using safe API wrapper
+    try:
+        print(f"[Agent] Calling generate_initial_analysis on: {temp_path}")
+        analysis_report = safe_agent_call(agent, "generate_initial_analysis", [temp_path])
+        
+        chat_history = chat_history or []
+        chat_history.append(("Assistant", analysis_report))
+        
+        yield (
+            annotated_image,
+            status_html,
+            alert_html,
+            alert_signal,
+            render_chat_html(chat_history),
+            gr.update(interactive=True, placeholder="Ask the legal assistant..."),
+            gr.update(interactive=True, value="Send"),
+            agent,
+            chat_history
+        )
+    except Exception as e:
+        print(f"[Agent] Analysis invocation failed: {e}")
+        chat_history = chat_history or []
+        chat_history.append(("Assistant", f"❌ Agent analysis failed: {str(e)}\n\nCheck terminal logs for debugging details."))
+        yield (
+            annotated_image,
+            status_html,
+            alert_html,
+            alert_signal,
+            render_chat_html(chat_history),
+            gr.update(interactive=True, placeholder="Ask the legal assistant..."),
+            gr.update(interactive=True, value="Send"),
+            agent,
+            chat_history
+        )
 
 
 def convert_avi_to_mp4(input_path: str) -> str | None:
@@ -913,37 +1424,63 @@ def convert_avi_to_mp4(input_path: str) -> str | None:
     return None
 
 
-def run_video_inference(video_path: str | None, confidence_threshold: float):
+def run_video_inference(video_path: str | None, confidence_threshold: float, chat_history, agent):
     """
     Handles video inference input from the UI.
     This function should not train or modify models.
-    It should only pass the uploaded video to the already-loaded best model
-    if video inference is supported.
+    It passes the uploaded video to the pipeline detector and runs
+    sequential severity classification on the highest-confidence crop.
+    It then invokes the AI accident agent sequentially.
     """
     import traceback
+    import cv2
 
     print("[VIDEO] run_video_inference started")
     print(f"[VIDEO] received video_path: {video_path}")
     print(f"[VIDEO] confidence_threshold: {confidence_threshold}")
 
-    if model is None:
-        print("[VIDEO] model is None")
-        yield None, build_status_banner(
-            title="Model unavailable",
-            message="No model was loaded. Please check the configured model paths.",
-            tone="alert",
-            icon="&#10005;",
-        ), gr.update(visible=True), build_alert_banner("error", "video"), build_alert_signal(False, "error", "video")
+    if pipeline.detector is None:
+        print("[VIDEO] detector model is None")
+        chat_history = chat_history or []
+        yield (
+            None,
+            build_status_banner(
+                title="Model unavailable",
+                message="No object detection model was loaded. Please check the configured paths.",
+                tone="alert",
+                icon="&#10005;",
+            ),
+            gr.update(visible=True),
+            build_alert_banner("error", "video"),
+            build_alert_signal(False, "error", "video"),
+            render_chat_html(chat_history),
+            gr.update(interactive=False, placeholder="Model unavailable."),
+            gr.update(interactive=False, value="Locked"),
+            agent,
+            chat_history
+        )
         return
 
     if not video_path:
         print("[VIDEO] no video_path provided")
-        yield None, build_status_banner(
-            title="No video uploaded",
-            message="Upload a road video to run accident detection inference.",
-            tone="neutral",
-            icon="&#8682;",
-        ), gr.update(visible=True), build_alert_banner("standby", "video"), build_alert_signal(False, "idle", "video")
+        chat_history = chat_history or []
+        yield (
+            None,
+            build_status_banner(
+                title="No video uploaded",
+                message="Upload a road video to run accident detection inference.",
+                tone="neutral",
+                icon="&#8682;",
+            ),
+            gr.update(visible=True),
+            build_alert_banner("standby", "video"),
+            build_alert_signal(False, "idle", "video"),
+            render_chat_html(chat_history),
+            gr.update(interactive=False, placeholder="Upload video first."),
+            gr.update(interactive=False, value="Locked"),
+            agent,
+            chat_history
+        )
         return
 
     video_file = Path(video_path)
@@ -954,21 +1491,45 @@ def run_video_inference(video_path: str | None, confidence_threshold: float):
     allowed_exts = {".mp4", ".avi", ".mov", ".mkv"}
     if video_file.suffix.lower() not in allowed_exts:
         print(f"[VIDEO] unsupported format: {video_file.suffix}")
-        yield None, build_status_banner(
-            title="Unsupported video format",
-            message=f"The uploaded format {video_file.suffix} is not supported. Please use MP4, AVI, MOV, or MKV.",
-            tone="alert",
-            icon="&#10005;",
-        ), gr.update(visible=True), build_alert_banner("error", "video"), build_alert_signal(False, "error", "video")
+        chat_history = chat_history or []
+        yield (
+            None,
+            build_status_banner(
+                title="Unsupported video format",
+                message=f"The uploaded format {video_file.suffix} is not supported. Please use MP4, AVI, MOV, or MKV.",
+                tone="alert",
+                icon="&#10005;",
+            ),
+            gr.update(visible=True),
+            build_alert_banner("error", "video"),
+            build_alert_signal(False, "error", "video"),
+            render_chat_html(chat_history),
+            gr.update(interactive=False, placeholder="Unsupported video."),
+            gr.update(interactive=False, value="Locked"),
+            agent,
+            chat_history
+        )
         return
 
     # Yield processing status
-    yield None, build_status_banner(
-        title="Processing video...",
-        message="Processing video frame by frame. This may take time depending on video length and device. Please wait...",
-        tone="neutral",
-        icon="&#9711;",
-    ), gr.update(visible=True), build_alert_banner("processing", "video"), build_alert_signal(False, "processing", "video")
+    chat_history = chat_history or []
+    yield (
+        None,
+        build_status_banner(
+            title="Processing video...",
+            message="Processing video frame by frame. This may take time depending on video length and device. Please wait...",
+            tone="neutral",
+            icon="&#9711;",
+        ),
+        gr.update(visible=True),
+        build_alert_banner("processing", "video"),
+        build_alert_signal(False, "processing", "video"),
+        render_chat_html(chat_history),
+        gr.update(interactive=False, placeholder="Processing video... Chatbot locked."),
+        gr.update(interactive=False, value="Analyzing..."),
+        agent,
+        chat_history
+    )
 
     try:
         run_id = str(int(time.time()))
@@ -977,10 +1538,10 @@ def run_video_inference(video_path: str | None, confidence_threshold: float):
         out_dir = project_dir / name_dir
 
         print(f"[VIDEO] output directory path: {out_dir}")
-        print("[VIDEO] calling model.predict() now...")
+        print("[VIDEO] calling pipeline.detector.predict() now...")
 
         # Run inference using the natively supported YOLO predict function with stride
-        results = model.predict(
+        results = pipeline.detector.predict(
             source=video_path,
             conf=confidence_threshold,
             save=True,
@@ -991,9 +1552,56 @@ def run_video_inference(video_path: str | None, confidence_threshold: float):
             vid_stride=3,
         )
 
-        print("[VIDEO] model.predict() finished")
-        accident_detected = detect_accident_from_collection(results)
-        print(f"[VIDEO] accident_detected in collection: {accident_detected}")
+        print("[VIDEO] pipeline.detector.predict() finished")
+        
+        # Scan prediction results for accident frames
+        highest_det_conf = 0.0
+        best_crop = None
+        best_frame = None
+        number_of_detected_frames = 0
+
+        print("[VIDEO] Scanning prediction results for accident frames...")
+        for res_frame in results:
+            if detect_accident_from_result(res_frame):
+                number_of_detected_frames += 1
+                boxes = getattr(res_frame, "boxes", None)
+                if boxes is not None and len(boxes) > 0:
+                    for box in boxes:
+                        conf = float(box.conf[0].item())
+                        if conf > highest_det_conf:
+                            highest_det_conf = conf
+                            try:
+                                xyxy = box.xyxy[0].cpu().numpy()
+                                x1, y1, x2, y2 = map(int, xyxy)
+                                orig_img = res_frame.orig_img
+                                if orig_img is not None:
+                                    best_crop = orig_img[y1:y2, x1:x2]
+                                    best_frame = orig_img
+                            except Exception as e:
+                                print(f"[VIDEO] Cropping failed: {e}")
+
+        accident_detected = (number_of_detected_frames > 0)
+        severity_label = "Not Applied"
+        severity_conf = 0.0
+        
+        if accident_detected:
+            label = None
+            conf_val = 0.0
+            if best_crop is not None:
+                print(f"[VIDEO] Accident detected! Running severity classification on crop from highest confidence frame (conf={highest_det_conf:.4f})...")
+                label, conf_val = pipeline.classify_severity(best_crop)
+                
+            # Fallback to full frame
+            if label is None:
+                if best_frame is not None:
+                    print("[VIDEO] Classification on crop failed. Falling back to full frame of best detection...")
+                    label, conf_val = pipeline.classify_severity(best_frame)
+                    
+            severity_label = label if label else "Classification Failed"
+            severity_conf = conf_val
+            print(f"[VIDEO] Severity Classification result: {severity_label} ({severity_conf:.4f})")
+        else:
+            print("[VIDEO] No accident detected in video.")
 
         # Locate the saved video file recursively using rglob
         output_video_path = None
@@ -1027,61 +1635,199 @@ def run_video_inference(video_path: str | None, confidence_threshold: float):
 
         print(f"[VIDEO] final preview path returned to Gradio: {preview_path}")
 
-        if preview_path:
-            if accident_detected:
-                yield preview_path, build_status_banner(
-                    title="Accident detected in video",
-                    message=f"Video processing finished and the uploaded media was classified as an accident. Annotated MP4 output loaded below. File saved to: {preview_path}",
-                    tone="alert",
-                    icon="&#9888;",
-                ), gr.update(visible=False), build_alert_banner("active", "video"), build_alert_signal(True, "accident", "video")
-            else:
-                yield preview_path, build_status_banner(
-                    title="No accident detected in video",
-                    message=f"Video processing finished and no accident class was detected above the selected confidence threshold. Annotated MP4 output loaded below. File saved to: {preview_path}",
-                    tone="safe",
-                    icon="&#10003;",
-                ), gr.update(visible=False), build_alert_banner("clear", "video"), build_alert_signal(False, "clear", "video")
-        elif conversion_failed:
-            if accident_detected:
-                yield None, build_status_banner(
-                    title="Accident detected in video (preview unavailable)",
-                    message=f"Video processing finished and the uploaded media was classified as an accident. The annotated AVI was saved successfully, but could not be converted for browser preview: {output_video_path}",
-                    tone="alert",
-                    icon="&#9888;",
-                ), gr.update(visible=True), build_alert_banner("active", "video"), build_alert_signal(True, "accident", "video")
-            else:
-                yield None, build_status_banner(
-                    title="No accident detected in video (preview unavailable)",
-                    message=f"Video processing finished and no accident class was detected. The annotated AVI was saved successfully, but could not be converted for browser preview: {output_video_path}",
-                    tone="safe",
-                    icon="&#10003;",
-                ), gr.update(visible=True), build_alert_banner("clear", "video"), build_alert_signal(False, "clear", "video")
+        # Build beautifully styled dashboard status banner for video
+        status_html = build_pipeline_status_banner(
+            accident_detected=accident_detected,
+            detection_conf=highest_det_conf,
+            severity_label=severity_label,
+            severity_conf=severity_conf,
+            num_detections=number_of_detected_frames,
+            source="video",
+            processed_video_path=preview_path if preview_path else output_video_path
+        )
+
+        alert_banner = build_alert_banner("active" if accident_detected else "clear", "video")
+        alert_sig = build_alert_signal(accident_detected, "accident" if accident_detected else "clear", "video")
+
+        if accident_detected:
+            chat_history = chat_history or []
+            # Yield intermediate results first, then run sequential KAG analysis
+            yield (
+                preview_path if preview_path else None,
+                build_status_banner(
+                    title="Analyzing accident with AI agent...",
+                    message="Accident detected! Extracting crash frames and initiating liability reasoning...",
+                    tone="neutral",
+                    icon="&#9711;",
+                ),
+                gr.update(visible=False) if preview_path else gr.update(visible=True),
+                alert_banner,
+                alert_sig,
+                render_chat_html(chat_history),
+                gr.update(interactive=False, placeholder="Analyzing accident with AI agent..."),
+                gr.update(interactive=False, value="Analyzing..."),
+                agent,
+                chat_history
+            )
+
+            # Initialize Agent
+            if not agent:
+                try:
+                    print("[Video Agent] Initializing AccidentAgent...")
+                    agent = get_accident_agent()
+                except Exception as e:
+                    print(f"[Video Agent] Initialization failed: {e}")
+                    chat_history = chat_history or []
+                    chat_history.append(("Accident Analysis Trigger", f"❌ Failed to load AI Agent folder or configs: {str(e)}"))
+                    yield (
+                        preview_path if preview_path else None,
+                        status_html,
+                        gr.update(visible=False) if preview_path else gr.update(visible=True),
+                        alert_banner,
+                        alert_sig,
+                        render_chat_html(chat_history),
+                        gr.update(interactive=False, placeholder="Agent offline. Config missing."),
+                        gr.update(interactive=False, value="Locked"),
+                        agent,
+                        chat_history
+                    )
+                    return
+
+            # Save keyframes (best frame and best crop)
+            temp_paths = []
+            if best_frame is not None:
+                tf = os.path.join(str(PROJECT_ROOT), "accident_agent", "temp_video_frame.jpg")
+                try:
+                    cv2.imwrite(tf, cv2.cvtColor(best_frame, cv2.COLOR_RGB2BGR))
+                    temp_paths.append(tf)
+                except Exception as e:
+                    print(f"[Video Agent] Error saving frame: {e}")
+            if best_crop is not None:
+                tc = os.path.join(str(PROJECT_ROOT), "accident_agent", "temp_video_crop.jpg")
+                try:
+                    cv2.imwrite(tc, cv2.cvtColor(best_crop, cv2.COLOR_RGB2BGR))
+                    temp_paths.append(tc)
+                except Exception as e:
+                    print(f"[Video Agent] Error saving crop: {e}")
+
+            # Invoke agent visual KAG report
+            try:
+                print(f"[Video Agent] Calling generate_initial_analysis on: {temp_paths}")
+                analysis_report = safe_agent_call(agent, "generate_initial_analysis", temp_paths)
+                
+                chat_history = chat_history or []
+                chat_history.append(("Auto Accident Analysis", analysis_report))
+                
+                yield (
+                    preview_path if preview_path else None,
+                    status_html,
+                    gr.update(visible=False) if preview_path else gr.update(visible=True),
+                    alert_banner,
+                    alert_sig,
+                    render_chat_html(chat_history),
+                    gr.update(interactive=True, placeholder="Ask the legal assistant..."),
+                    gr.update(interactive=True, value="Send"),
+                    agent,
+                    chat_history
+                )
+            except Exception as e:
+                print(f"[Video Agent] KAG analysis failed: {e}")
+                chat_history = chat_history or []
+                chat_history.append(("Auto Accident Analysis", f"❌ Video analysis failed: {str(e)}\n\nCheck terminal logs for traceback."))
+                yield (
+                    preview_path if preview_path else None,
+                    status_html,
+                    gr.update(visible=False) if preview_path else gr.update(visible=True),
+                    alert_banner,
+                    alert_sig,
+                    render_chat_html(chat_history),
+                    gr.update(interactive=True, placeholder="Ask the legal assistant..."),
+                    gr.update(interactive=True, value="Send"),
+                    agent,
+                    chat_history
+                )
         else:
-            if accident_detected:
-                yield None, build_status_banner(
-                    title="Accident detected in video",
-                    message="Video inference completed and the uploaded media was classified as an accident, but the annotated preview file could not be located. Check the runs output folder.",
-                    tone="alert",
-                    icon="&#9888;",
-                ), gr.update(visible=True), build_alert_banner("active", "video"), build_alert_signal(True, "accident", "video")
-            else:
-                yield None, build_status_banner(
-                    title="No accident detected in video",
-                    message="Video inference completed and no accident class was detected above the selected confidence threshold, but the annotated preview file could not be located. Check the runs output folder.",
-                    tone="safe",
-                    icon="&#10003;",
-                ), gr.update(visible=True), build_alert_banner("clear", "video"), build_alert_signal(False, "clear", "video")
+            chat_history = chat_history or []
+            yield (
+                preview_path if preview_path else None,
+                status_html,
+                gr.update(visible=False) if preview_path else gr.update(visible=True),
+                alert_banner,
+                alert_sig,
+                render_chat_html(chat_history),
+                gr.update(interactive=True, placeholder="Ask the legal assistant general questions..."),
+                gr.update(interactive=True, value="Send"),
+                agent,
+                chat_history
+            )
 
     except Exception as e:
         print(f"[VIDEO] ERROR: {str(e)}")
         traceback.print_exc()
-        yield None, build_status_banner(
-            title="Video processing failed",
-            message=f"Error: {str(e)}. Check the terminal logs for full traceback.",
-            tone="alert",
-            icon="&#10005;",
-        ), gr.update(visible=True), build_alert_banner("error", "video"), build_alert_signal(False, "error", "video")
+        chat_history = chat_history or []
+        yield (
+            None,
+            build_status_banner(
+                title="Video processing failed",
+                message=f"Error: {str(e)}. Check the terminal logs for full traceback.",
+                tone="alert",
+                icon="&#10005;",
+            ),
+            gr.update(visible=True),
+            build_alert_banner("error", "video"),
+            build_alert_signal(False, "error", "video"),
+            render_chat_html(chat_history),
+            gr.update(interactive=False, placeholder="Processing error."),
+            gr.update(interactive=False, value="Locked"),
+            agent,
+            chat_history
+        )
+
+
+def render_chat_html(chat_history):
+    if not chat_history:
+        return """
+        <div style="text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.95rem; line-height: 1.5; background: rgba(248, 250, 252, 0.6); border: 1px dashed var(--card-border); border-radius: 16px; margin: 18px 0;">
+            &#128227; <b>Jordan Traffic Law Assistant</b><br>
+            Upload an accident image/video and run inference. The AI agent will automatically analyze it and generate a liability report here.
+        </div>
+        """
+    
+    html = '<div class="chat-preview" style="max-height: 280px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px; margin: 18px 0; background: rgba(248, 250, 252, 0.3); border-radius: 16px; border: 1px solid var(--card-border);">'
+    for role, text in chat_history:
+        if role == "User":
+            html += f"""
+            <div class="chat-bubble chat-bubble-user" style="align-self: flex-end; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.16); color: var(--primary-dark); max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 2px 18px; font-size: 0.92rem; line-height: 1.5; text-align: left;">
+                <span class="chat-role" style="display: block; margin-bottom: 4px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #2563eb;">User</span>
+                <div style="word-break: break-word; white-space: pre-wrap;">{escape(text)}</div>
+            </div>
+            """
+        else:
+            # Safely render the text and preserve formatting / line breaks
+            formatted_text = escape(text).replace('\\n', '<br>').replace('\n', '<br>')
+            # Support basic formatting like bold or bullet points if any
+            # Format bold blocks safely
+            parts = formatted_text.split('**')
+            new_text = ""
+            for idx, part in enumerate(parts):
+                if idx % 2 == 1:
+                    new_text += f"<b>{part}</b>"
+                else:
+                    new_text += part
+            formatted_text = new_text
+            
+            # Replaces * bullet points with bullet symbol
+            formatted_text = formatted_text.replace('<br>* ', '<br>&bull; ')
+            formatted_text = formatted_text.replace('<br>- ', '<br>&bull; ')
+            
+            html += f"""
+            <div class="chat-bubble chat-bubble-assistant" style="align-self: flex-start; background: #ffffff; border: 1px solid rgba(147, 197, 253, 0.35); color: var(--text-primary); max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 18px 2px; font-size: 0.92rem; line-height: 1.5; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.03); text-align: left;">
+                <span class="chat-role" style="display: block; margin-bottom: 4px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #1e40af;">Assistant</span>
+                <div style="word-break: break-word; white-space: pre-wrap;">{formatted_text}</div>
+            </div>
+            """
+    html += '</div>'
+    return html
 
 
 def build_app():
@@ -2370,6 +3116,7 @@ def build_app():
                             step=0.01,
                             show_label=False,
                             elem_classes="threshold-slider",
+                            elem_id="image-confidence-slider",
                         )
                         submit_btn = gr.Button(
                             "Run Inference",
@@ -2404,6 +3151,7 @@ def build_app():
                             step=0.01,
                             show_label=False,
                             elem_classes="threshold-slider",
+                            elem_id="video-confidence-slider",
                         )
                         video_submit_btn = gr.Button(
                             "Run Video Inference",
@@ -2483,20 +3231,19 @@ def build_app():
                         <div class="panel-intro">
                             <span class="section-icon">SEV</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">Future Module</p>
+                                <p class="panel-kicker">Integrated Pipeline</p>
                                 <h2 class="panel-title">Accident Severity Classification</h2>
                                 <p class="panel-description">
-                                    Coming soon: severity model integration
+                                    Sequential classification active: accident bounding boxes are cropped and analyzed to determine accident severity.
                                 </p>
                             </div>
                         </div>
                         <div class="severity-stack">
-                            <span class="severity-pill severity-low">Low Severity</span>
-                            <span class="severity-pill severity-medium">Medium Severity</span>
-                            <span class="severity-pill severity-high">High Severity</span>
+                            <span class="severity-pill severity-low">Moderate Severity</span>
+                            <span class="severity-pill severity-high">Severe Severity</span>
                         </div>
                         <div class="placeholder-note">
-                            The severity classifier will analyze the detected accident and estimate impact severity.
+                            Active classifier categories: moderate-accident, severe-accident, no-accident. Detections are cropped and classified dynamically.
                         </div>
                         """
                     )
@@ -2521,6 +3268,7 @@ def build_app():
                         label="Scenario Description",
                         placeholder="Describe the accident scenario, vehicle movement, road conditions, and any relevant details...",
                         elem_classes="explanation-input",
+                        elem_id="scenario-explanation-input",
                     )
                     gr.HTML(
                         """
@@ -2536,44 +3284,39 @@ def build_app():
                         <div class="panel-intro">
                             <span class="section-icon">LAW</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">Future Assistant</p>
+                                <p class="panel-kicker">Jordanian KAG Agent</p>
                                 <h2 class="panel-title">Jordan Traffic Law Assistant</h2>
                                 <p class="panel-description">
                                     <span class="assistant-chip">قانون السير الأردني</span>
                                 </p>
                             </div>
                         </div>
-                        <div class="placeholder-note">
-                            This assistant will later answer questions about accident responsibility and Jordan traffic law.
-                            No backend logic is connected yet.
-                        </div>
-                        <div class="chat-preview">
-                            <div class="chat-bubble chat-bubble-user">
-                                <span class="chat-role">User</span>
-                                The car behind me hit my vehicle at a red light. Who is responsible?
-                            </div>
-                            <div class="chat-bubble chat-bubble-assistant">
-                                <span class="chat-role">Assistant</span>
-                                Future assistant response will analyze the situation according to Jordan traffic law.
-                            </div>
-                        </div>
                         """
+                    )
+                    chatbot = gr.HTML(
+                        value=render_chat_html([]),
+                        elem_id="law-chatbot",
+                        elem_classes="chat-preview",
                     )
                     with gr.Row():
                         law_prompt = gr.Textbox(
                             lines=1,
                             show_label=False,
-                            placeholder="Ask the legal assistant",
+                            placeholder="Upload an accident and run inference to start AI analysis...",
                             interactive=False,
                             elem_classes="assistant-input",
+                            elem_id="law-assistant-prompt",
                             scale=5,
                         )
                         law_button = gr.Button(
-                            "Coming Soon",
+                            "Locked",
                             interactive=False,
                             elem_classes="assistant-button",
+                            elem_id="law-assistant-button",
                             scale=2,
                         )
+                    agent_state = gr.State(None)
+                    chat_history = gr.State([])
 
             with gr.Column(elem_classes="workflow-card"):
                 gr.HTML(
@@ -2709,14 +3452,69 @@ def build_app():
         # Inference Trigger Event Handlers
         submit_btn.click(
             fn=run_image_inference,
-            inputs=[image_input, conf_slider],
-            outputs=[image_output, status_output, alert_banner_output, alert_signal_output],
+            inputs=[image_input, conf_slider, chat_history, agent_state],
+            outputs=[image_output, status_output, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history],
         )
 
         video_submit_btn.click(
             fn=run_video_inference,
-            inputs=[video_input, video_conf_slider],
-            outputs=[video_output, video_status_output, video_placeholder, alert_banner_output, alert_signal_output],
+            inputs=[video_input, video_conf_slider, chat_history, agent_state],
+            outputs=[video_output, video_status_output, video_placeholder, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history],
+        )
+
+        def initiate_chat(user_message, chat_history):
+            chat_history = chat_history or []
+            if not user_message or not user_message.strip():
+                return "", render_chat_html(chat_history), chat_history, gr.update(), gr.update()
+            chat_history.append((user_message, "⏳ Thinking..."))
+            return (
+                "",
+                render_chat_html(chat_history),
+                chat_history,
+                gr.update(interactive=False, placeholder="Analyzing query with AI agent..."),
+                gr.update(interactive=False, value="Sending...")
+            )
+
+        def generate_chat_reply(chat_history, agent):
+            if not chat_history:
+                return render_chat_html([]), [], gr.update(interactive=True, placeholder="Ask the legal assistant..."), gr.update(interactive=True, value="Send")
+            
+            user_message, _ = chat_history[-1]
+            
+            if not agent:
+                chat_history[-1] = (user_message, "⚠️ AI Agent is offline. OpenRouter key or required files are missing.")
+                return render_chat_html(chat_history), chat_history, gr.update(interactive=True, placeholder="Ask the legal assistant..."), gr.update(interactive=True, value="Send")
+
+            try:
+                reply = safe_agent_call(agent, "chat_with_user", user_message)
+                chat_history[-1] = (user_message, reply)
+            except Exception as e:
+                print(f"[Chat Error]: {e}")
+                chat_history[-1] = (user_message, f"❌ Agent analysis failed: {str(e)}")
+
+            return render_chat_html(chat_history), chat_history, gr.update(interactive=True, placeholder="Ask the legal assistant..."), gr.update(interactive=True, value="Send")
+
+        # Chatbot prompt/button event handlers
+        law_prompt.submit(
+            fn=initiate_chat,
+            inputs=[law_prompt, chat_history],
+            outputs=[law_prompt, chatbot, chat_history, law_prompt, law_button],
+            queue=False
+        ).then(
+            fn=generate_chat_reply,
+            inputs=[chat_history, agent_state],
+            outputs=[chatbot, chat_history, law_prompt, law_button]
+        )
+
+        law_button.click(
+            fn=initiate_chat,
+            inputs=[law_prompt, chat_history],
+            outputs=[law_prompt, chatbot, chat_history, law_prompt, law_button],
+            queue=False
+        ).then(
+            fn=generate_chat_reply,
+            inputs=[chat_history, agent_state],
+            outputs=[chatbot, chat_history, law_prompt, law_button]
         )
 
         # Confidence Sliders Parameter Updates
