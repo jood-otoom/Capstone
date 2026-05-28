@@ -274,13 +274,134 @@ def find_best_pt(model_dir: Path) -> Path:
     raise FileNotFoundError(f"Could not find best.pt weights in {model_dir}")
 
 
+def render_final_summary_html(
+    accident_detected: bool | None,
+    detection_conf: float,
+    severity_label: str | None,
+    severity_conf: float,
+    escalation_status: str | None = None,
+    assistant_summary: str = ""
+) -> str:
+    if accident_detected is None:
+        return """
+        <div style="background: #ffffff; border: 1px solid rgba(147, 197, 253, 0.42); border-radius: 18px; padding: 20px 24px; box-shadow: 0 4px 18px rgba(29, 78, 216, 0.03); width: 100%;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                <span style="font-size: 1.1rem; color: #1e40af;">&#128203;</span>
+                <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a;">Step 5: Final Detection Summary</h3>
+            </div>
+            <p style="margin: 0 0 16px; font-size: 0.88rem; color: #64748b;">Review the final accident detection, severity, escalation, and AI assistant summary.</p>
+            <div style="text-align: center; color: #64748b; padding: 30px; font-size: 0.92rem; background: rgba(248, 250, 252, 0.6); border: 1px dashed rgba(147, 197, 253, 0.35); border-radius: 12px;">
+                &#9993; <b>Awaiting Sequential Pipeline execution...</b><br>
+                Upload an image or video above and click Run Inference to trigger the sequential model pipeline. The final unified report will populate here.
+            </div>
+        </div>
+        """
+
+    det_val = "Accident" if accident_detected else "No Accident"
+    det_conf_str = f"{detection_conf * 100:.1f}%" if accident_detected else "-"
+    
+    display_sev = severity_display_label(severity_label) if (severity_label and severity_label not in ["Model not found", "Not Applied", "Classification Failed"]) else "Pending"
+    if not accident_detected:
+        display_sev = "Low Severity" # Match severity display rules for no accident
+
+    if accident_detected and severity_label not in ["Model not found", "Not Applied", "Classification Failed", None]:
+        sev_conf_str = f"{severity_conf * 100:.1f}%"
+    else:
+        sev_conf_str = "-"
+
+    if escalation_status is None:
+        if severity_label and "severe" in str(severity_label).lower():
+            esc_val = "Escalated"
+        else:
+            esc_val = "Not Escalated"
+    else:
+        esc_val = escalation_status
+
+    det_badge_style = "background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;" if accident_detected else "background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;"
+    
+    if "severe" in display_sev.lower():
+        sev_badge_style = "background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;"
+    elif "moderate" in display_sev.lower():
+        sev_badge_style = "background: #fffbeb; border: 1px solid #fef3c7; color: #b45309;"
+    else:
+        sev_badge_style = "background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8;"
+        
+    esc_badge_style = "background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-weight: 800;" if esc_val == "Escalated" else "background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;"
+
+    if assistant_summary:
+        preview_text = escape(assistant_summary)
+        parts = preview_text.split('**')
+        new_text = ""
+        for idx, part in enumerate(parts):
+            if idx % 2 == 1:
+                new_text += f"<b>{part}</b>"
+            else:
+                new_text += part
+        preview_text = new_text.replace('\\n', '<br>').replace('\n', '<br>')
+        if len(preview_text) > 400:
+            preview_text = preview_text[:397] + "..."
+    else:
+        preview_text = "Pending AI analysis report. Once accident detection finishes, the liability report preview will appear here."
+
+    return f"""
+    <div style="background: #ffffff; border: 1px solid rgba(147, 197, 253, 0.42); border-radius: 18px; padding: 22px 24px; box-shadow: 0 4px 18px rgba(29, 78, 216, 0.03); width: 100%;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <span style="font-size: 1.1rem; color: #2563eb;">&#128203;</span>
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a;">Step 5: Final Detection Summary</h3>
+        </div>
+        <p style="margin: 0 0 18px; font-size: 0.88rem; color: #64748b;">Review the final accident detection, severity, escalation, and AI assistant summary.</p>
+        
+        <div style="display: flex; flex-direction: column; gap: 16px; width: 100%;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; width: 100%;">
+                <div style="{det_badge_style} padding: 12px 14px; border-radius: 12px; display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 0.76rem; text-transform: uppercase; font-weight: 800; opacity: 0.8; letter-spacing: 0.03em;">Accident Detection</span>
+                    <span style="font-size: 1.1rem; font-weight: 900;">{det_val}</span>
+                    <span style="font-size: 0.82rem; font-weight: 700; opacity: 0.9;">Confidence: {det_conf_str}</span>
+                </div>
+                
+                <div style="{sev_badge_style} padding: 12px 14px; border-radius: 12px; display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 0.76rem; text-transform: uppercase; font-weight: 800; opacity: 0.8; letter-spacing: 0.03em;">Severity Classification</span>
+                    <span style="font-size: 1.1rem; font-weight: 900;">{display_sev}</span>
+                    <span style="font-size: 0.82rem; font-weight: 700; opacity: 0.9;">Confidence: {sev_conf_str}</span>
+                </div>
+                
+                <div style="{esc_badge_style} padding: 12px 14px; border-radius: 12px; display: flex; flex-direction: column; gap: 3px; justify-content: center;">
+                    <span style="font-size: 0.76rem; text-transform: uppercase; font-weight: 800; opacity: 0.8; letter-spacing: 0.03em;">Escalation Status</span>
+                    <span style="font-size: 1.1rem; font-weight: 900;">{esc_val}</span>
+                </div>
+            </div>
+            
+            <div style="background: #f8fafc; border: 1px solid rgba(147, 197, 253, 0.25); border-radius: 12px; padding: 14px 18px; width: 100%;">
+                <div style="font-size: 0.78rem; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                    <span>&#9993;</span> AI Assistant Report Preview
+                </div>
+                <div style="font-size: 0.88rem; line-height: 1.55; color: #334155; word-break: break-word; white-space: pre-wrap; max-height: 160px; overflow-y: auto; padding-right: 6px;">{preview_text}</div>
+            </div>
+        </div>
+    </div>
+    """
+
+
+def severity_display_label(raw_label):
+    if raw_label is None:
+        return ""
+    normalized = str(raw_label).strip().lower().replace("_", " ").replace("-", " ")
+    if normalized == "no accident":
+        return "Low Severity"
+    if normalized == "severe":
+        return "Severe"
+    if normalized == "moderate":
+        return "Moderate"
+    return str(raw_label).strip().title()
+
+
 def format_severity_label(label: str) -> str:
     """Formats raw severity labels into clean title-cased strings for the UI."""
     if not label:
         return "N/A"
     if label in ["Model not found", "Not Applied", "Classification Failed"]:
         return label
-    return label.replace("-", " ").title()
+    return severity_display_label(label)
 
 
 def build_pipeline_status_banner(
@@ -362,6 +483,9 @@ class AccidentSeverityPipeline:
         self.detector_path = None
         self.classifier_path = None
         self.classifier_missing = False
+        self.last_det_conf = 0.0
+        self.last_sev_label = None
+        self.last_sev_conf = 0.0
 
     def load_models(self):
         # 1. Resolve and Load Detection Model
@@ -558,131 +682,7 @@ def detect_accident_from_collection(results) -> bool:
 
 
 def build_alert_banner(state: str = "standby", source: str = "image") -> str:
-    media_label = get_media_label(source)
-
-    if state == "active":
-        return f"""
-        <section class="emergency-alert-card state-active" role="alert" aria-live="assertive">
-            <div class="emergency-alert-icon">&#9888;</div>
-            <div class="emergency-alert-copy">
-                <div class="emergency-alert-topline">
-                    <span class="emergency-alert-eyebrow">Emergency Alert</span>
-                    <div class="emergency-alert-badges">
-                        <span class="emergency-alert-badge badge-danger">Alert Active</span>
-                        <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                    </div>
-                </div>
-                <h3 class="emergency-alert-title">ACCIDENT DETECTED</h3>
-                <p class="emergency-alert-message">
-                    Immediate attention required. Review the detection result and take action.
-                </p>
-                <div class="emergency-alert-actions" style="margin-top: 14px;">
-                    <button id="stop-alert-btn" type="button" class="stop-alert-button">
-                        &#9208; Stop Alert Sound
-                    </button>
-                </div>
-            </div>
-        </section>
-        """
-
-    if state == "clear":
-        return f"""
-        <section class="emergency-alert-card state-clear" aria-live="polite">
-            <div class="emergency-alert-icon">&#10003;</div>
-            <div class="emergency-alert-copy">
-                <div class="emergency-alert-topline">
-                    <span class="emergency-alert-eyebrow">Alert Cleared</span>
-                    <div class="emergency-alert-badges">
-                        <span class="emergency-alert-badge badge-clear">No Alarm</span>
-                        <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                    </div>
-                </div>
-                <h3 class="emergency-alert-title">No active accident alert</h3>
-                <p class="emergency-alert-message">
-                    The final displayed result did not confirm an accident, so the alert remains off.
-                </p>
-            </div>
-        </section>
-        """
-
-    if state == "processing":
-        return f"""
-        <section class="emergency-alert-card state-processing" aria-live="polite">
-            <div class="emergency-alert-icon">&#9711;</div>
-            <div class="emergency-alert-copy">
-                <div class="emergency-alert-topline">
-                    <span class="emergency-alert-eyebrow">Alert Monitoring</span>
-                    <div class="emergency-alert-badges">
-                        <span class="emergency-alert-badge badge-standby">Processing</span>
-                        <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                    </div>
-                </div>
-                <h3 class="emergency-alert-title">Detection in progress</h3>
-                <p class="emergency-alert-message">
-                    The emergency alert will activate only if the final displayed result confirms an accident.
-                </p>
-            </div>
-        </section>
-        """
-
-    if state == "armed":
-        return f"""
-        <section class="emergency-alert-card state-standby" aria-live="polite">
-            <div class="emergency-alert-icon">&#9889;</div>
-            <div class="emergency-alert-copy">
-                <div class="emergency-alert-topline">
-                    <span class="emergency-alert-eyebrow">Alert Monitoring</span>
-                    <div class="emergency-alert-badges">
-                        <span class="emergency-alert-badge badge-standby">Armed</span>
-                        <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                    </div>
-                </div>
-                <h3 class="emergency-alert-title">Alert ready</h3>
-                <p class="emergency-alert-message">
-                    Alert features are armed and will stay silent unless the final displayed result confirms an accident.
-                </p>
-            </div>
-        </section>
-        """
-
-    if state == "error":
-        return f"""
-        <section class="emergency-alert-card state-error" aria-live="polite">
-            <div class="emergency-alert-icon">&#9888;</div>
-            <div class="emergency-alert-copy">
-                <div class="emergency-alert-topline">
-                    <span class="emergency-alert-eyebrow">Alert Reset</span>
-                    <div class="emergency-alert-badges">
-                        <span class="emergency-alert-badge badge-warning">No Alarm</span>
-                        <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                    </div>
-                </div>
-                <h3 class="emergency-alert-title">Alert inactive</h3>
-                <p class="emergency-alert-message">
-                    The alert was reset because inference did not complete with a confirmed accident result.
-                </p>
-            </div>
-        </section>
-        """
-
-    return f"""
-    <section class="emergency-alert-card state-standby" aria-live="polite">
-        <div class="emergency-alert-icon">&#9711;</div>
-        <div class="emergency-alert-copy">
-            <div class="emergency-alert-topline">
-                <span class="emergency-alert-eyebrow">Alert Standby</span>
-                <div class="emergency-alert-badges">
-                    <span class="emergency-alert-badge badge-standby">Monitoring Off</span>
-                    <span class="emergency-alert-badge badge-source">{escape(media_label)}</span>
-                </div>
-            </div>
-            <h3 class="emergency-alert-title">Awaiting detection result</h3>
-            <p class="emergency-alert-message">
-                Upload media and run inference. The emergency alert will activate only for a confirmed accident result.
-            </p>
-        </div>
-    </section>
-    """
+    return ""
 
 
 def build_alert_controls() -> str:
@@ -690,11 +690,14 @@ def build_alert_controls() -> str:
 
 
 def build_alert_signal(alert_active: bool, status: str, source: str) -> str:
+    import uuid
+    alert_id = str(uuid.uuid4())
     title = "Accident Detected" if alert_active else "Alert Standby"
     message = "The uploaded media was classified as an accident." if alert_active else ""
     return f"""
     <div
         class="alert-signal-data"
+        data-alert-id="{alert_id}"
         data-alert-active="{str(alert_active).lower()}"
         data-alert-status="{escape(status)}"
         data-alert-source="{escape(source)}"
@@ -713,6 +716,7 @@ def build_alert_controller_head() -> str:
 
       const controller = {
         state: {
+          id: "",
           active: false,
           status: "idle",
           source: "image",
@@ -721,11 +725,11 @@ def build_alert_controller_head() -> str:
         },
         audioSupported: Boolean(window.AudioContext || window.webkitAudioContext),
         notificationSupported: typeof window.Notification !== "undefined",
-        soundEnabled: false,
-        mutedByUser: false,
+        soundEnabled: true,
         hasUserInteracted: false,
         audioContext: null,
         alarmTimer: null,
+        alarmTimeout: null,
         signalObserver: null,
         signalObserverHost: null,
         attachTimer: null,
@@ -736,29 +740,22 @@ def build_alert_controller_head() -> str:
           this.bindGlobalHandlers();
           this.attachSignalObserver();
           this.syncFromSignal();
-          this.updateUI();
         },
 
         enableSoundAndNotifications() {
           this.soundEnabled = true;
-          this.mutedByUser = false;
           this.registerInteraction();
           this.ensureAudioContext();
 
           if (this.notificationSupported && Notification.permission === "default") {
             Notification.requestPermission()
               .then((permission) => {
-                this.updateUI();
                 if (permission === "granted") {
                   this.lastNotificationKey = "";
                   this.notify();
                 }
               })
-              .catch(() => {
-                this.updateUI();
-              });
-          } else {
-            this.updateUI();
+              .catch(() => {});
           }
         },
 
@@ -780,12 +777,6 @@ def build_alert_controller_head() -> str:
 
             if (button.id === "run-image-inference-btn" || button.id === "run-video-inference-btn") {
               this.enableSoundAndNotifications();
-            }
-
-            if (button.id === "stop-alert-btn") {
-              event.preventDefault();
-              this.stopAlertByUser();
-              this.updateUI();
             }
           }, true);
 
@@ -847,6 +838,7 @@ def build_alert_controller_head() -> str:
           const node = host ? host.querySelector(".alert-signal-data") : null;
           if (!node) {
             return {
+              id: "",
               active: false,
               status: "idle",
               source: "image",
@@ -856,6 +848,7 @@ def build_alert_controller_head() -> str:
           }
 
           return {
+            id: node.dataset.alertId || "",
             active: node.dataset.alertActive === "true",
             status: node.dataset.alertStatus || "idle",
             source: node.dataset.alertSource || "image",
@@ -868,33 +861,32 @@ def build_alert_controller_head() -> str:
           const next = this.readSignalPayload();
           const wasActive = this.state.active;
           const previousStatus = this.state.status;
+          const previousId = this.state.id;
           this.state = next;
 
           if (!next.active) {
-            if (wasActive || previousStatus !== next.status) {
+            if (wasActive || previousStatus !== next.status || previousId !== next.id) {
               this.resetRuntime();
             } else {
               this.applyClasses();
-              this.updateUI();
             }
             return;
           }
 
-          if (!wasActive) {
+          if (!wasActive || previousId !== next.id) {
+            this.stopAlarm();
             this.activateAlert();
             return;
           }
 
           this.applyClasses();
-          this.updateUI();
         },
 
         activateAlert() {
           this.applyClasses();
-          this.updateUI();
           this.triggerVibration();
 
-          if (this.soundEnabled && !this.mutedByUser && this.hasUserInteracted) {
+          if (this.soundEnabled && this.hasUserInteracted) {
             this.startAlarm();
           }
 
@@ -904,14 +896,12 @@ def build_alert_controller_head() -> str:
         resetRuntime() {
           this.stopAlarm();
           this.stopVibration();
-          this.mutedByUser = false;
           this.lastNotificationKey = "";
           this.applyClasses();
-          this.updateUI();
         },
 
         startAlarm() {
-          if (!this.state.active || !this.soundEnabled || this.mutedByUser || !this.hasUserInteracted) return;
+          if (!this.state.active || !this.soundEnabled || !this.hasUserInteracted) return;
           if (!this.ensureAudioContext()) return;
           if (this.alarmTimer) return;
 
@@ -919,12 +909,23 @@ def build_alert_controller_head() -> str:
           this.alarmTimer = window.setInterval(() => {
             this.playAlarmPattern();
           }, 1900);
+
+          if (this.alarmTimeout) {
+            window.clearTimeout(this.alarmTimeout);
+          }
+          this.alarmTimeout = window.setTimeout(() => {
+            this.stopAlarm();
+          }, 10000);
         },
 
         stopAlarm() {
           if (this.alarmTimer) {
             window.clearInterval(this.alarmTimer);
             this.alarmTimer = null;
+          }
+          if (this.alarmTimeout) {
+            window.clearTimeout(this.alarmTimeout);
+            this.alarmTimeout = null;
           }
         },
 
@@ -1003,56 +1004,25 @@ def build_alert_controller_head() -> str:
           }
         },
 
-        enableSound() {
-          this.soundEnabled = true;
-          this.mutedByUser = false;
-          this.registerInteraction();
-          this.ensureAudioContext();
-
-          if (this.state.active) {
-            this.startAlarm();
-          }
-
-          this.applyClasses();
-          this.updateUI();
-        },
-
-        stopAlertByUser() {
-          this.stopAlarm();
-          this.stopVibration();
-
-          if (this.state.active) {
-            this.mutedByUser = true;
-          }
-
-          this.applyClasses();
-          this.updateUI();
-        },
-
         enableBrowserAlerts() {
           this.registerInteraction();
           if (!this.notificationSupported) {
-            this.updateUI();
             return;
           }
 
           if (Notification.permission === "granted") {
-            this.updateUI();
             this.notify();
             return;
           }
 
           Notification.requestPermission()
             .then((permission) => {
-              this.updateUI();
               if (permission === "granted") {
                 this.lastNotificationKey = "";
                 this.notify();
               }
             })
-            .catch(() => {
-              this.updateUI();
-            });
+            .catch(() => {});
         },
 
         applyClasses() {
@@ -1060,7 +1030,6 @@ def build_alert_controller_head() -> str:
           if (!body) return;
 
           body.classList.toggle("accident-alert-active", this.state.active);
-          body.classList.toggle("accident-alert-muted", this.state.active && this.mutedByUser);
           body.classList.toggle("accident-alert-source-image", this.state.active && this.state.source === "image");
           body.classList.toggle("accident-alert-source-video", this.state.active && this.state.source === "video");
         },
@@ -1070,21 +1039,6 @@ def build_alert_controller_head() -> str:
           if (!pill) return;
           pill.textContent = text;
           pill.className = `alert-pill ${tone}`;
-        },
-
-        updateUI() {
-          const stopButton = document.getElementById("stop-alert-btn");
-          if (stopButton) {
-            if (this.mutedByUser) {
-              stopButton.innerHTML = "&#9208; Alert Sound Muted";
-              stopButton.style.backgroundColor = "#4b5563";
-              stopButton.style.borderColor = "#374151";
-              stopButton.disabled = true;
-            } else {
-              stopButton.innerHTML = "&#9208; Stop Alert Sound";
-              stopButton.disabled = !this.state.active;
-            }
-          }
         },
 
         destroy() {
@@ -1115,8 +1069,6 @@ def build_alert_controller_head() -> str:
     })();
     </script>
     """
-
-
 def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
     if pipeline.detector is None:
         return input_image, build_status_banner(
@@ -1154,6 +1106,10 @@ def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
             source="image"
         )
         
+        pipeline.last_det_conf = det_conf
+        pipeline.last_sev_label = sev_label
+        pipeline.last_sev_conf = sev_conf
+
         if accident_detected:
             alert_html = build_alert_banner("active", "image")
             alert_signal = build_alert_signal(True, "accident", "image")
@@ -1177,46 +1133,79 @@ def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
 
 def handle_image_upload(image: np.ndarray | None):
     if image is None:
-        return build_status_banner(
-            title="No image uploaded",
-            message="Please upload a valid road image.",
-            tone="neutral",
-            icon="&#8682;",
-        ), None, build_alert_banner("standby", "image"), build_alert_signal(False, "idle", "image")
-    return build_status_banner(
-        title="Image uploaded successfully",
-        message="Review the preview and click Run Inference to detect accidents.",
-        tone="safe",
-        icon="&#10003;",
-    ), None, build_alert_banner("armed", "image"), build_alert_signal(False, "armed", "image")
+        return (
+            build_status_banner(
+                title="No image uploaded",
+                message="Please upload a valid road image.",
+                tone="neutral",
+                icon="&#8682;",
+            ),
+            None,
+            build_alert_banner("standby", "image"),
+            build_alert_signal(False, "idle", "image"),
+            render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", "")
+        )
+    return (
+        build_status_banner(
+            title="Image uploaded successfully",
+            message="Review the preview and click Run Inference to detect accidents.",
+            tone="safe",
+            icon="&#10003;",
+        ),
+        None,
+        build_alert_banner("armed", "image"),
+        build_alert_signal(False, "armed", "image"),
+        render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
+    )
 
 
 def handle_video_upload(video_path: str | None):
     if not video_path:
-        return build_status_banner(
-            title="No video uploaded",
-            message="Please upload a road video for testing.",
-            tone="neutral",
-            icon="&#8682;",
-        ), None, gr.update(visible=True), build_alert_banner("standby", "video"), build_alert_signal(False, "idle", "video")
+        return (
+            build_status_banner(
+                title="No video uploaded",
+                message="Please upload a road video for testing.",
+                tone="neutral",
+                icon="&#8682;",
+            ),
+            None,
+            gr.update(visible=True),
+            build_alert_banner("standby", "video"),
+            build_alert_signal(False, "idle", "video"),
+            render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", "")
+        )
     
     # Validate file extension
     allowed_exts = {".mp4", ".avi", ".mov", ".mkv"}
     ext = Path(video_path).suffix.lower()
     if ext not in allowed_exts:
-        return build_status_banner(
-            title="Unsupported video format",
-            message=f"The uploaded format {ext} is not supported. Please use MP4, AVI, MOV, or MKV.",
-            tone="alert",
-            icon="&#10005;",
-        ), None, gr.update(visible=True), build_alert_banner("error", "video"), build_alert_signal(False, "error", "video")
+        return (
+            build_status_banner(
+                title="Unsupported video format",
+                message=f"The uploaded format {ext} is not supported. Please use MP4, AVI, MOV, or MKV.",
+                tone="alert",
+                icon="&#10005;",
+            ),
+            None,
+            gr.update(visible=True),
+            build_alert_banner("error", "video"),
+            build_alert_signal(False, "error", "video"),
+            render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", "")
+        )
     
-    return build_status_banner(
-        title="Video uploaded successfully",
-        message="Review the preview and click Run Video Inference to process.",
-        tone="safe",
-        icon="&#10003;",
-    ), None, gr.update(visible=True), build_alert_banner("armed", "video"), build_alert_signal(False, "armed", "video")
+    return (
+        build_status_banner(
+            title="Video uploaded successfully",
+            message="Review the preview and click Run Video Inference to process.",
+            tone="safe",
+            icon="&#10003;",
+        ),
+        None,
+        gr.update(visible=True),
+        build_alert_banner("armed", "video"),
+        build_alert_signal(False, "armed", "video"),
+        render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
+    )
 
 
 def handle_image_clear():
@@ -1230,6 +1219,7 @@ def handle_image_clear():
         None,
         build_alert_banner("standby", "image"),
         build_alert_signal(False, "idle", "image"),
+        render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", "")
     )
 
 
@@ -1245,6 +1235,7 @@ def handle_video_clear():
         gr.update(visible=True),
         build_alert_banner("standby", "video"),
         build_alert_signal(False, "idle", "video"),
+        render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", "")
     )
 
 
@@ -1269,12 +1260,13 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
             gr.update(interactive=False, placeholder="Inference failed."),
             gr.update(interactive=False, value="Locked"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
         )
         return
 
     # Check if accident was detected
-    accident_detected = "ACCIDENT DETECTED" in alert_html
+    accident_detected = 'data-alert-active="true"' in alert_signal
 
     # If no accident is detected
     if not accident_detected:
@@ -1288,7 +1280,8 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
             gr.update(interactive=True, placeholder="Ask the legal assistant general questions..."),
             gr.update(interactive=True, value="Send"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, pipeline.last_det_conf, "Not Applied", 0.0, "Not Escalated", "")
         )
         return
 
@@ -1308,7 +1301,8 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
         gr.update(interactive=False, placeholder="Analyzing accident with AI agent..."),
         gr.update(interactive=False, value="Analyzing..."),
         agent,
-        chat_history
+        chat_history,
+        render_final_summary_html(True, pipeline.last_det_conf, pipeline.last_sev_label, pipeline.last_sev_conf, None, "AI liability analysis in progress...")
     )
 
     # Step 2: Initialize Agent safely
@@ -1329,7 +1323,8 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
                 gr.update(interactive=False, placeholder="Agent offline. Config missing."),
                 gr.update(interactive=False, value="Locked"),
                 agent,
-                chat_history
+                chat_history,
+                render_final_summary_html(True, pipeline.last_det_conf, pipeline.last_sev_label, pipeline.last_sev_conf, None, f"Agent offline. Error: {str(e)}")
             )
             return
 
@@ -1359,7 +1354,8 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
             gr.update(interactive=True, placeholder="Ask the legal assistant..."),
             gr.update(interactive=True, value="Send"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(True, pipeline.last_det_conf, pipeline.last_sev_label, pipeline.last_sev_conf, None, analysis_report)
         )
     except Exception as e:
         print(f"[Agent] Analysis invocation failed: {e}")
@@ -1374,7 +1370,8 @@ def run_image_inference(input_image: np.ndarray, conf_threshold: float, chat_his
             gr.update(interactive=True, placeholder="Ask the legal assistant..."),
             gr.update(interactive=True, value="Send"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(True, pipeline.last_det_conf, pipeline.last_sev_label, pipeline.last_sev_conf, None, f"Analysis failed: {str(e)}")
         )
 
 
@@ -1457,7 +1454,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
             gr.update(interactive=False, placeholder="Model unavailable."),
             gr.update(interactive=False, value="Locked"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
         )
         return
 
@@ -1479,7 +1477,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
             gr.update(interactive=False, placeholder="Upload video first."),
             gr.update(interactive=False, value="Locked"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
         )
         return
 
@@ -1507,7 +1506,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
             gr.update(interactive=False, placeholder="Unsupported video."),
             gr.update(interactive=False, value="Locked"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
         )
         return
 
@@ -1528,7 +1528,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
         gr.update(interactive=False, placeholder="Processing video... Chatbot locked."),
         gr.update(interactive=False, value="Analyzing..."),
         agent,
-        chat_history
+        chat_history,
+        render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
     )
 
     try:
@@ -1667,7 +1668,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
                 gr.update(interactive=False, placeholder="Analyzing accident with AI agent..."),
                 gr.update(interactive=False, value="Analyzing..."),
                 agent,
-                chat_history
+                chat_history,
+                render_final_summary_html(True, highest_det_conf, severity_label, severity_conf, None, "AI liability analysis in progress...")
             )
 
             # Initialize Agent
@@ -1689,7 +1691,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
                         gr.update(interactive=False, placeholder="Agent offline. Config missing."),
                         gr.update(interactive=False, value="Locked"),
                         agent,
-                        chat_history
+                        chat_history,
+                        render_final_summary_html(True, highest_det_conf, severity_label, severity_conf, None, f"Agent offline. Error: {str(e)}")
                     )
                     return
 
@@ -1728,7 +1731,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
                     gr.update(interactive=True, placeholder="Ask the legal assistant..."),
                     gr.update(interactive=True, value="Send"),
                     agent,
-                    chat_history
+                    chat_history,
+                    render_final_summary_html(True, highest_det_conf, severity_label, severity_conf, None, analysis_report)
                 )
             except Exception as e:
                 print(f"[Video Agent] KAG analysis failed: {e}")
@@ -1744,7 +1748,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
                     gr.update(interactive=True, placeholder="Ask the legal assistant..."),
                     gr.update(interactive=True, value="Send"),
                     agent,
-                    chat_history
+                    chat_history,
+                    render_final_summary_html(True, highest_det_conf, severity_label, severity_conf, None, f"Analysis failed: {str(e)}")
                 )
         else:
             chat_history = chat_history or []
@@ -1758,7 +1763,8 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
                 gr.update(interactive=True, placeholder="Ask the legal assistant general questions..."),
                 gr.update(interactive=True, value="Send"),
                 agent,
-                chat_history
+                chat_history,
+                render_final_summary_html(False, highest_det_conf, "Not Applied", 0.0, "Not Escalated", "")
             )
 
     except Exception as e:
@@ -1780,26 +1786,30 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
             gr.update(interactive=False, placeholder="Processing error."),
             gr.update(interactive=False, value="Locked"),
             agent,
-            chat_history
+            chat_history,
+            render_final_summary_html(False, 0.0, None, 0.0, "Not Escalated", "")
         )
 
 
 def render_chat_html(chat_history):
     if not chat_history:
         return """
-        <div style="text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.95rem; line-height: 1.5; background: rgba(248, 250, 252, 0.6); border: 1px dashed var(--card-border); border-radius: 16px; margin: 18px 0;">
-            &#128227; <b>Jordan Traffic Law Assistant</b><br>
-            Upload an accident image/video and run inference. The AI agent will automatically analyze it and generate a liability report here.
+        <div style="text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.98rem; line-height: 1.6; background: rgba(248, 250, 252, 0.6); border: 1px dashed var(--card-border); border-radius: 20px; margin: 18px 0; min-height: 480px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
+            <div style="font-size: 2.2rem;">&#129302;</div>
+            <div style="font-weight: 800; color: var(--primary-dark); font-size: 1.15rem;">Accident Law Assistant Chat</div>
+            <div style="max-width: 420px; opacity: 0.85;">
+                Awaiting inference result. Upload a road scene or video and run detection to automatically initiate the AI Accident Liability Analysis.
+            </div>
         </div>
         """
     
-    html = '<div class="chat-preview" style="max-height: 280px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px; margin: 18px 0; background: rgba(248, 250, 252, 0.3); border-radius: 16px; border: 1px solid var(--card-border);">'
+    html = '<div class="chat-preview" style="height: 480px; max-height: 480px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; margin: 18px 0; background: rgba(248, 250, 252, 0.3); border-radius: 16px; border: 1px solid var(--card-border);">'
     for role, text in chat_history:
         if role == "User":
             html += f"""
-            <div class="chat-bubble chat-bubble-user" style="align-self: flex-end; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.16); color: var(--primary-dark); max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 2px 18px; font-size: 0.92rem; line-height: 1.5; text-align: left;">
-                <span class="chat-role" style="display: block; margin-bottom: 4px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #2563eb;">User</span>
-                <div style="word-break: break-word; white-space: pre-wrap;">{escape(text)}</div>
+            <div class="chat-bubble chat-bubble-user" style="align-self: flex-end; background: #2563eb !important; border: 1px solid #1e40af; color: #ffffff !important; max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 2px 18px; font-size: 0.92rem; line-height: 1.5; text-align: left; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);">
+                <span class="chat-role" style="display: block; margin-bottom: 4px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #dbeafe !important;">User</span>
+                <div style="word-break: break-word; white-space: pre-wrap; color: #ffffff !important;">{escape(text)}</div>
             </div>
             """
         else:
@@ -1821,9 +1831,9 @@ def render_chat_html(chat_history):
             formatted_text = formatted_text.replace('<br>- ', '<br>&bull; ')
             
             html += f"""
-            <div class="chat-bubble chat-bubble-assistant" style="align-self: flex-start; background: #ffffff; border: 1px solid rgba(147, 197, 253, 0.35); color: var(--text-primary); max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 18px 2px; font-size: 0.92rem; line-height: 1.5; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.03); text-align: left;">
+            <div class="chat-bubble chat-bubble-assistant" style="align-self: flex-start; background: #ffffff; border: 1px solid rgba(147, 197, 253, 0.45); color: #0f172a; max-width: 85%; padding: 12px 16px; border-radius: 18px 18px 18px 2px; font-size: 0.92rem; line-height: 1.5; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.04); text-align: left;">
                 <span class="chat-role" style="display: block; margin-bottom: 4px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #1e40af;">Assistant</span>
-                <div style="word-break: break-word; white-space: pre-wrap;">{formatted_text}</div>
+                <div style="word-break: break-word; white-space: pre-wrap; color: #0f172a !important;">{formatted_text}</div>
             </div>
             """
     html += '</div>'
@@ -1832,7 +1842,7 @@ def render_chat_html(chat_history):
 
 def build_app():
     custom_css = """
-    :root {
+    :root, .dark {
         --page-bg-top: #eef6ff;
         --page-bg-mid: #f8fbff;
         --page-bg-bottom: #dfefff;
@@ -1858,29 +1868,63 @@ def build_app():
         --neutral-bg: #eff6ff;
         --neutral-border: #bfdbfe;
         --neutral-text: #1d4ed8;
-        --alert-pulse-shadow: rgba(220, 38, 38, 0.28);
-        --alert-ring-soft: rgba(220, 38, 38, 0.16);
-        --alert-ring-strong: rgba(220, 38, 38, 0.30);
-        --warning-bg: #fff7ed;
-        --warning-border: #fdba74;
-        --warning-text: #9a3412;
+        
+        /* Force light mode variables globally in both light and dark client themes */
+        --body-background-fill: #ffffff !important;
+        --block-background-fill: #ffffff !important;
+        --block-border-color: rgba(147, 197, 253, 0.42) !important;
+        --block-title-text-color: #0f172a !important;
+        --block-label-text-color: #1e40af !important;
+        --input-background-fill: #ffffff !important;
+        --input-border-color: rgba(147, 197, 253, 0.42) !important;
+        --input-text-color: #0f172a !important;
+        --background-fill-primary: #ffffff !important;
+        --background-fill-secondary: #f8fafc !important;
+        --border-color-primary: rgba(147, 197, 253, 0.42) !important;
+        --border-color-secondary: rgba(147, 197, 253, 0.3) !important;
+        --panel-background-fill: #ffffff !important;
+        --panel-border-color: rgba(147, 197, 253, 0.42) !important;
     }
 
-    body,
-    .gradio-container {
+    /* Force light theme elements on Gradio containers to override dark mode */
+    .gradio-container,
+    .gradio-container .block,
+    .gradio-container .form,
+    .gradio-container .fieldset,
+    .gradio-container .compact,
+    .gradio-container .padded,
+    .gradio-container .panel,
+    .gradio-container .box,
+    .gradio-container input,
+    .gradio-container select,
+    .gradio-container textarea,
+    .gradio-container .gr-input,
+    .gradio-container .gr-box,
+    .gradio-container .gr-form,
+    .gradio-container .gr-block {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border-color: rgba(147, 197, 253, 0.42) !important;
+    }
+
+    body, body.dark {
         margin: 0;
         min-height: 100vh;
         background:
             radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 28%),
             radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 24%),
-            linear-gradient(140deg, var(--page-bg-top) 0%, var(--page-bg-mid) 52%, var(--page-bg-bottom) 100%);
-        color: var(--text-primary);
+            linear-gradient(140deg, var(--page-bg-top) 0%, var(--page-bg-mid) 52%, var(--page-bg-bottom) 100%) !important;
+        color: var(--text-primary) !important;
         font-family: "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     }
 
+    /* Full-width landscape container */
     .gradio-container {
-        max-width: 1320px !important;
-        padding: 34px 20px 42px !important;
+        max-width: none !important;
+        width: 100% !important;
+        padding: 24px 32px !important;
+        background: transparent !important;
     }
 
     #page-shell {
@@ -1890,156 +1934,77 @@ def build_app():
     .hero-card,
     .panel-card,
     .workflow-card,
+    .workflow-strip-card,
     .footer-card {
-        background: var(--card-bg);
-        border: 1px solid var(--card-border);
-        border-radius: 28px;
-        box-shadow: var(--card-shadow);
+        background: var(--card-bg) !important;
+        border: 1px solid var(--card-border) !important;
+        border-radius: 28px !important;
+        box-shadow: var(--card-shadow) !important;
     }
 
-    .hero-card {
-        position: relative;
-        overflow: hidden;
-        padding: 34px;
-        background:
-            linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(239, 246, 255, 0.96) 100%);
+    /* Strict Readability Safeguards */
+    .panel-card,
+    .workflow-strip-card,
+    .threshold-card,
+    .assistant-compose {
+        color: #0f172a !important;
     }
 
-    .hero-card::before {
-        content: "";
-        position: absolute;
-        inset: 0 auto auto 0;
-        width: 100%;
-        height: 6px;
-        background: linear-gradient(90deg, var(--primary) 0%, var(--accent-cyan) 100%);
+    .panel-card *,
+    .threshold-card *,
+    .assistant-compose *,
+    .workflow-strip-card * {
+        --text-primary: #0f172a !important;
+        --body-text-color: #0f172a !important;
+        --block-title-text-color: #1e3a8a !important;
+        --block-label-text-color: #1e3a8a !important;
+        --input-text-color: #0f172a !important;
     }
 
-    .hero-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.9fr);
-        gap: 24px;
-        align-items: start;
+    .panel-card p,
+    .panel-card span,
+    .panel-card h1,
+    .panel-card h2,
+    .panel-card h3,
+    .panel-card h4,
+    .panel-card div,
+    .panel-card label,
+    .threshold-card p,
+    .threshold-card span,
+    .threshold-card div,
+    .assistant-compose div,
+    .assistant-compose span,
+    .workflow-strip-card div,
+    .workflow-strip-card span {
+        color: #0f172a;
     }
 
-    .hero-copy {
-        min-width: 0;
+    .gradio-container textarea,
+    .gradio-container input[type="text"] {
+        color: #0f172a !important;
+        background-color: #ffffff !important;
+        border: 1px solid rgba(147, 197, 253, 0.42) !important;
     }
 
-    .hero-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 14px;
-        border-radius: 999px;
-        background: rgba(37, 99, 235, 0.08);
-        color: var(--primary-dark);
-        font-size: 0.82rem;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-    }
-
-    .hero-title {
-        margin: 18px 0 0;
-        color: var(--text-primary);
-        font-size: clamp(2.2rem, 4.4vw, 3.6rem);
-        font-weight: 900;
-        line-height: 1.05;
-        letter-spacing: -0.03em;
-    }
-
-    .hero-subtitle {
-        margin: 16px 0 0;
-        max-width: 820px;
-        color: var(--primary-dark);
-        font-size: clamp(1.05rem, 2vw, 1.32rem);
-        font-weight: 700;
-        line-height: 1.5;
-    }
-
-    .hero-description {
-        margin: 16px 0 0;
-        max-width: 800px;
-        color: var(--text-muted);
-        font-size: 1.03rem;
-        line-height: 1.8;
-    }
-
-    .hero-aside {
-        min-width: 0;
-    }
-
-    .hero-aside-card {
-        padding: 22px;
-        border-radius: 24px;
-        border: 1px solid rgba(147, 197, 253, 0.45);
-        background:
-            linear-gradient(180deg, rgba(219, 234, 254, 0.8) 0%, rgba(255, 255, 255, 0.98) 100%);
-    }
-
-    .hero-aside-label {
-        margin: 0 0 10px;
-        color: var(--primary-dark);
-        font-size: 0.88rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-    }
-
-    .hero-aside-title {
-        margin: 0;
-        color: var(--text-primary);
-        font-size: 1.28rem;
-        font-weight: 800;
-    }
-
-    .hero-feature-list {
-        display: grid;
-        gap: 12px;
-        margin-top: 16px;
-    }
-
-    .hero-feature {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 14px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.82);
-        color: var(--text-primary);
-        font-size: 0.96rem;
-        font-weight: 600;
-    }
-
-    .hero-feature-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 34px;
-        height: 34px;
-        flex: 0 0 34px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--accent-cyan) 100%);
-        color: #ffffff;
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.04em;
+    .gradio-container textarea::placeholder,
+    .gradio-container input[type="text"]::placeholder {
+        color: #64748b !important;
+        opacity: 0.8 !important;
     }
 
     .model-badge {
-        margin-top: 26px;
-        padding: 18px 20px;
+        margin-top: 14px;
+        padding: 14px 18px;
         background: rgba(255, 255, 255, 0.82);
         border: 1px solid rgba(147, 197, 253, 0.38);
-        border-radius: 20px;
-        backdrop-filter: blur(6px);
+        border-radius: 18px;
     }
 
     .model-badge-label {
         display: inline-block;
-        margin-bottom: 8px;
+        margin-bottom: 4px;
         color: var(--primary-dark);
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -2049,52 +2014,127 @@ def build_app():
         display: block;
         margin: 0;
         color: var(--text-primary);
-        font-size: 0.95rem;
-        font-family: "Cascadia Code", "Consolas", monospace;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        font-size: 0.9rem;
+        font-family: monospace;
     }
 
+    /* Select Input Mode label & pill buttons */
     .mode-selector {
-        background: rgba(37, 99, 235, 0.04) !important;
-        border: 1px solid rgba(147, 197, 253, 0.3) !important;
-        border-radius: 16px !important;
-        padding: 6px !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(147, 197, 253, 0.42) !important;
+        border-radius: 18px !important;
+        padding: 16px !important;
         margin-bottom: 20px !important;
+        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.03) !important;
+    }
+
+    .mode-selector .block-label,
+    .mode-selector span.block-label,
+    .mode-selector span {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #2563eb !important; /* Medium blue text */
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+        padding: 0 !important;
+        margin-bottom: 12px !important;
+        display: block !important;
+        position: static !important;
+        width: auto !important;
+        height: auto !important;
+    }
+
+    .mode-selector .wrap,
+    .mode-selector fieldset,
+    .mode-selector .form {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 12px !important;
+        padding: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    .mode-selector label,
+    .mode-selector label.gr-radio {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 8px 16px !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(148, 163, 184, 0.3) !important;
+        background: #ffffff !important;
+        color: #475569 !important; /* Navy/gray */
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+    }
+
+    .mode-selector label:hover,
+    .mode-selector label.gr-radio:hover {
+        border-color: rgba(37, 99, 235, 0.3) !important;
+        background: #f0f7ff !important;
+    }
+
+    .mode-selector label.selected,
+    .mode-selector label.gr-radio-selected,
+    .mode-selector input[type="radio"]:checked + span,
+    .mode-selector label:has(input[type="radio"]:checked) {
+        background: #eff6ff !important; /* Very light blue */
+        border: 1px solid #2563eb !important; /* Blue border */
+        color: #1e3a8a !important; /* Navy text */
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.08) !important;
+    }
+
+    .mode-selector input[type="radio"] {
+        display: none !important;
     }
 
     .content-grid {
-        gap: 24px;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 20px !important;
+        width: 100% !important;
     }
 
     .panel-card {
-        padding: 28px;
-        min-width: 0;
-        transition: box-shadow 0.28s ease, border-color 0.28s ease;
+        flex: 1 1 18% !important; /* Landscape row beside each other */
+        min-width: 260px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        background: #ffffff !important;
+        padding: 24px !important;
     }
 
     .panel-intro {
         display: flex;
         align-items: flex-start;
-        gap: 14px;
-        margin-bottom: 18px;
+        gap: 12px;
+        margin-bottom: 16px;
     }
 
     .section-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 46px;
-        height: 46px;
-        flex: 0 0 46px;
-        border-radius: 16px;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 12px;
         background: linear-gradient(135deg, var(--primary) 0%, var(--accent-cyan) 100%);
-        color: #ffffff;
-        font-size: 0.84rem;
+        color: #ffffff !important;
+        font-size: 0.8rem;
         font-weight: 800;
-        letter-spacing: 0.05em;
-        box-shadow: 0 14px 24px rgba(37, 99, 235, 0.16);
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
     }
 
     .panel-copy {
@@ -2102,35 +2142,34 @@ def build_app():
     }
 
     .panel-kicker {
-        margin: 0 0 7px;
-        color: var(--primary-dark);
-        font-size: 0.82rem;
+        margin: 0 0 4px;
+        color: var(--primary-dark) !important;
+        font-size: 0.78rem;
         font-weight: 800;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
     }
 
     .panel-title {
         margin: 0;
-        color: var(--text-primary);
-        font-size: 1.5rem;
+        color: var(--text-primary) !important;
+        font-size: 1.24rem;
         font-weight: 850;
     }
 
     .panel-description {
-        margin: 10px 0 0;
-        color: var(--text-muted);
-        font-size: 0.98rem;
-        line-height: 1.65;
+        margin: 8px 0 0;
+        color: var(--text-muted) !important;
+        font-size: 0.92rem;
+        line-height: 1.55;
     }
 
     .image-shell {
         overflow: hidden;
-        border: 1px solid var(--card-border);
-        border-radius: 20px;
-        background: #f8fafc;
+        border: 1px solid var(--card-border) !important;
+        border-radius: 16px !important;
+        background: #f8fafc !important;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-        transition: box-shadow 0.28s ease, border-color 0.28s ease;
     }
 
     #alert-signal-region {
@@ -2140,24 +2179,23 @@ def build_app():
     .emergency-alert-card {
         display: flex;
         align-items: flex-start;
-        gap: 16px;
-        margin-bottom: 18px;
-        padding: 22px 24px;
-        border-radius: 22px;
+        gap: 12px;
+        margin-bottom: 16px;
+        padding: 16px 18px;
+        border-radius: 18px;
         border: 1px solid transparent;
-        transition: box-shadow 0.28s ease, border-color 0.28s ease, background 0.28s ease;
     }
 
     .emergency-alert-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 48px;
-        height: 48px;
-        flex: 0 0 48px;
-        border-radius: 16px;
+        width: 36px;
+        height: 36px;
+        flex: 0 0 36px;
+        border-radius: 10px;
         background: rgba(255, 255, 255, 0.78);
-        font-size: 1.18rem;
+        font-size: 1rem;
         font-weight: 900;
     }
 
@@ -2169,31 +2207,31 @@ def build_app():
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 10px 12px;
+        gap: 8px;
     }
 
     .emergency-alert-eyebrow {
         color: inherit;
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         font-weight: 800;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
     }
 
     .emergency-alert-badges {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
     }
 
     .emergency-alert-badge {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 30px;
-        padding: 5px 10px;
+        min-height: 26px;
+        padding: 4px 8px;
         border-radius: 999px;
-        font-size: 0.8rem;
+        font-size: 0.76rem;
         font-weight: 800;
         border: 1px solid transparent;
     }
@@ -2201,46 +2239,45 @@ def build_app():
     .badge-danger {
         background: rgba(185, 28, 28, 0.12);
         border-color: rgba(185, 28, 28, 0.18);
-        color: #991b1b;
+        color: #991b1b !important;
     }
 
     .badge-clear {
         background: rgba(22, 163, 74, 0.10);
         border-color: rgba(22, 163, 74, 0.18);
-        color: var(--safe-text);
+        color: var(--safe-text) !important;
     }
 
     .badge-standby,
     .badge-source {
         background: rgba(37, 99, 235, 0.08);
         border-color: rgba(147, 197, 253, 0.42);
-        color: var(--primary-dark);
+        color: var(--primary-dark) !important;
     }
 
     .badge-warning {
         background: rgba(245, 158, 11, 0.12);
         border-color: rgba(245, 158, 11, 0.25);
-        color: #b45309;
+        color: #b45309 !important;
     }
 
     .emergency-alert-title {
-        margin: 10px 0 0;
-        font-size: 1.42rem;
+        margin: 8px 0 0;
+        font-size: 1.15rem;
         font-weight: 900;
         letter-spacing: -0.02em;
     }
 
     .emergency-alert-message {
-        margin: 10px 0 0;
-        font-size: 0.97rem;
-        line-height: 1.68;
+        margin: 8px 0 0;
+        font-size: 0.92rem;
+        line-height: 1.55;
     }
 
     .state-active {
         background: #fee2e2 !important;
         border: 2px solid #ef4444 !important;
         color: #7f1d1d !important;
-        box-shadow: 0 10px 25px rgba(220, 38, 38, 0.15) !important;
     }
 
     .state-active .emergency-alert-title,
@@ -2254,45 +2291,8 @@ def build_app():
         color: #7f1d1d !important;
     }
 
-    .state-active .badge-danger {
-        background: #fca5a5 !important;
-        border: 1px solid #ef4444 !important;
-        color: #7f1d1d !important;
-        font-weight: 800 !important;
-    }
 
-    .state-active .badge-source {
-        background: #bfdbfe !important;
-        border: 1px solid #3b82f6 !important;
-        color: #1e3a8a !important;
-        font-weight: 800 !important;
-    }
 
-    .stop-alert-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-        background: #dc2626 !important;
-        color: #ffffff !important;
-        border: 1px solid #b91c1c !important;
-        border-radius: 12px;
-        font-size: 0.9rem;
-        font-weight: 700;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
-        transition: background-color 0.2s, transform 0.2s;
-        margin-top: 10px;
-    }
-    .stop-alert-button:hover {
-        background: #b91c1c !important;
-        transform: translateY(-1px);
-    }
-    .stop-alert-button:active {
-        transform: translateY(0);
-    }
-
-    /* HIGH-CONTRAST FOR ALL OTHER ALERT BANNER STATES (NAVY BLUE & BLACK FOR STANDBY/PROCESSING) */
     .state-clear {
         background: #d1fae5 !important;
         border: 1px solid #10b981 !important;
@@ -2307,18 +2307,6 @@ def build_app():
         background: #a7f3d0 !important;
         color: #064e3b !important;
     }
-    .state-clear .badge-clear {
-        background: #a7f3d0 !important;
-        border: 1px solid #10b981 !important;
-        color: #064e3b !important;
-        font-weight: 800 !important;
-    }
-    .state-clear .badge-source {
-        background: #a7f3d0 !important;
-        border: 1px solid #10b981 !important;
-        color: #064e3b !important;
-        font-weight: 800 !important;
-    }
 
     .state-standby,
     .state-processing {
@@ -2332,26 +2320,12 @@ def build_app():
     .state-processing .emergency-alert-title,
     .state-processing .emergency-alert-message,
     .state-processing .emergency-alert-eyebrow {
-        color: #1e3a8a !important; /* Navy Blue text */
+        color: #1e3a8a !important;
     }
     .state-standby .emergency-alert-icon,
     .state-processing .emergency-alert-icon {
         background: #bfdbfe !important;
         color: #1e3a8a !important;
-    }
-    .state-standby .badge-standby,
-    .state-processing .badge-standby {
-        background: #bfdbfe !important;
-        border: 1px solid #93c5fd !important;
-        color: #1e3a8a !important;
-        font-weight: 800 !important;
-    }
-    .state-standby .badge-source,
-    .state-processing .badge-source {
-        background: #bfdbfe !important;
-        border: 1px solid #3b82f6 !important;
-        color: #1e3a8a !important;
-        font-weight: 800 !important;
     }
 
     .state-error {
@@ -2359,306 +2333,69 @@ def build_app():
         border: 1px solid #f97316 !important;
         color: #7c2d12 !important;
     }
-    .state-error .emergency-alert-title,
-    .state-error .emergency-alert-message,
-    .state-error .emergency-alert-eyebrow {
-        color: #7c2d12 !important;
+
+    /* Clean White Confidence threshold card styling */
+    .threshold-card {
+        background: #ffffff !important;
+        border: 1px solid rgba(147, 197, 253, 0.42) !important;
+        border-radius: 18px !important;
+        padding: 16px !important;
+        margin-bottom: 20px !important;
+        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.03) !important;
     }
-    .state-error .emergency-alert-icon {
-        background: #fed7aa !important;
-        color: #7c2d12 !important;
-    }
-    .state-error .badge-warning {
-        background: #fed7aa !important;
-        border: 1px solid #f97316 !important;
-        color: #7c2d12 !important;
-        font-weight: 800 !important;
-    }
-    .state-error .badge-source {
-        background: #fed7aa !important;
-        border: 1px solid #f97316 !important;
-        color: #7c2d12 !important;
-        font-weight: 800 !important;
+    
+    .threshold-card .block,
+    .threshold-card .form {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
 
-    .alert-controls-head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px 16px;
-        margin-bottom: 16px;
-    }
-
-    .alert-controls-kicker {
-        margin: 0 0 6px;
-        color: var(--primary-dark);
-        font-size: 0.8rem;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-    }
-
-    .alert-controls-title {
-        margin: 0;
-        color: var(--text-primary);
-        font-size: 1.08rem;
-        font-weight: 800;
-    }
-
-    .alert-controls-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 8px 12px;
-        border-radius: 999px;
-        background: rgba(37, 99, 235, 0.08);
-        color: var(--primary-dark);
-        font-size: 0.82rem;
-        font-weight: 700;
-    }
-
-    .alert-controls-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 16px;
-    }
-
-    .alert-control-stat {
-        display: grid;
-        gap: 8px;
-        padding: 14px 16px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.94);
-        border: 1px solid rgba(226, 232, 240, 0.88);
-    }
-
-    .alert-control-label {
-        color: var(--text-muted);
-        font-size: 0.84rem;
-        font-weight: 700;
-    }
-
-    .alert-pill {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: fit-content;
-        min-height: 30px;
-        padding: 5px 10px;
-        border-radius: 999px;
-        font-size: 0.82rem;
-        font-weight: 800;
-        border: 1px solid transparent;
-    }
-
-    .pill-standby {
-        background: rgba(37, 99, 235, 0.08);
-        border-color: rgba(147, 197, 253, 0.42);
-        color: var(--primary-dark);
-    }
-
-    .pill-success {
-        background: rgba(22, 163, 74, 0.10);
-        border-color: rgba(134, 239, 172, 0.48);
-        color: var(--safe-text);
-    }
-
-    .pill-warning {
-        background: rgba(245, 158, 11, 0.12);
-        border-color: rgba(251, 191, 36, 0.35);
-        color: #b45309;
-    }
-
-    .pill-active {
-        background: rgba(220, 38, 38, 0.12);
-        border-color: rgba(248, 113, 113, 0.35);
-        color: var(--alert-text);
-    }
-
-    .pill-muted {
-        background: rgba(71, 85, 105, 0.12);
-        border-color: rgba(148, 163, 184, 0.34);
-        color: #334155;
-    }
-
-    .alert-controls-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-
-    .alert-control-button {
-        min-height: 46px;
-        padding: 0 16px;
-        border-radius: 14px;
-        font-family: inherit;
-        font-size: 0.94rem;
-        font-weight: 800;
-        border: 1px solid transparent;
-        cursor: pointer;
-        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-    }
-
-    .alert-control-button:hover:not(:disabled) {
-        transform: translateY(-1px);
-    }
-
-    .alert-control-button:disabled {
-        cursor: not-allowed;
-        opacity: 0.64;
-    }
-
-    .button-primary {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        color: #ffffff;
-        box-shadow: 0 14px 24px rgba(37, 99, 235, 0.18);
-    }
-
-    .button-secondary {
-        background: rgba(255, 255, 255, 0.96);
-        border-color: rgba(148, 163, 184, 0.42);
-        color: var(--text-primary);
-    }
-
-    .alert-controls-note {
-        margin: 14px 0 0;
-        color: var(--text-muted);
-        font-size: 0.9rem;
-        line-height: 1.6;
-    }
-
-    @keyframes alertPulse {
-        0%, 100% {
-            box-shadow:
-                0 0 0 0 rgba(220, 38, 38, 0.16),
-                0 18px 40px rgba(220, 38, 38, 0.14);
-        }
-        50% {
-            box-shadow:
-                0 0 0 10px rgba(220, 38, 38, 0.08),
-                0 22px 48px rgba(220, 38, 38, 0.22);
-        }
-    }
-
-    @keyframes alertBorderPulse {
-        0%, 100% {
-            box-shadow:
-                0 0 0 0 rgba(220, 38, 38, 0.10),
-                0 0 0 4px rgba(220, 38, 38, 0.08);
-        }
-        50% {
-            box-shadow:
-                0 0 0 6px rgba(220, 38, 38, 0.12),
-                0 0 0 10px rgba(220, 38, 38, 0.06);
-        }
-    }
-
-    body.accident-alert-active:not(.accident-alert-muted) #emergency-alert-region .state-active,
-    body.accident-alert-active:not(.accident-alert-muted) #detection-output-panel {
-        animation: alertPulse 2.4s ease-in-out infinite;
-    }
-
-    body.accident-alert-active.accident-alert-source-image #image-preview-input,
-    body.accident-alert-active.accident-alert-source-image #image-preview-output,
-    body.accident-alert-active.accident-alert-source-image #image-status-region .status-banner,
-    body.accident-alert-active.accident-alert-source-video #video-preview-input,
-    body.accident-alert-active.accident-alert-source-video #video-preview-output,
-    body.accident-alert-active.accident-alert-source-video #video-status-region .status-banner {
-        border-color: var(--alert-ring-strong) !important;
-        box-shadow:
-            0 0 0 1px rgba(220, 38, 38, 0.18),
-            0 0 0 6px var(--alert-ring-soft),
-            0 18px 38px rgba(220, 38, 38, 0.12) !important;
-    }
-
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-image #image-preview-input,
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-image #image-preview-output,
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-image #image-status-region .status-banner,
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-video #video-preview-input,
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-video #video-preview-output,
-    body.accident-alert-active:not(.accident-alert-muted).accident-alert-source-video #video-status-region .status-banner {
-        animation: alertBorderPulse 2.4s ease-in-out infinite;
-    }
-
-    body.accident-alert-active #detection-output-panel {
-        border-color: rgba(248, 113, 113, 0.36);
-        box-shadow:
-            0 0 0 1px rgba(220, 38, 38, 0.12),
-            0 24px 60px rgba(220, 38, 38, 0.16);
-    }
-
-    body.accident-alert-muted #detection-output-panel,
-    body.accident-alert-muted #image-preview-input,
-    body.accident-alert-muted #image-preview-output,
-    body.accident-alert-muted #video-preview-input,
-    body.accident-alert-muted #video-preview-output,
-    body.accident-alert-muted #image-status-region .status-banner,
-    body.accident-alert-muted #video-status-region .status-banner,
-    body.accident-alert-muted #emergency-alert-region .state-active {
-        animation: none !important;
+    .threshold-slider {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
 
     .threshold-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        margin-top: 18px;
-        margin-bottom: 10px;
+        margin-top: 10px;
+        margin-bottom: 8px;
+        padding: 0 4px;
     }
 
     .threshold-label {
-        color: var(--text-primary);
-        font-size: 1rem;
-        font-weight: 700;
+        color: #1e3a8a !important; /* Navy */
+        font-size: 0.92rem !important;
+        font-weight: 750 !important;
     }
 
     .threshold-value {
-        padding: 6px 10px;
+        color: #2563eb !important; /* Blue */
+        font-size: 0.98rem !important;
+        font-weight: 800 !important;
         background: rgba(37, 99, 235, 0.08);
-        border: 1px solid rgba(147, 197, 253, 0.5);
+        padding: 4px 10px;
         border-radius: 999px;
-        color: var(--primary-dark);
-        font-size: 0.95rem;
-        font-weight: 800;
-    }
-
-    .threshold-slider {
-        margin-bottom: 20px;
-    }
-
-    .threshold-slider .wrap,
-    .threshold-slider .wrap.svelte-1ipelgc,
-    .threshold-slider .container,
-    .explanation-input textarea,
-    .assistant-input textarea {
-        border-radius: 18px !important;
-    }
-
-    .threshold-slider input,
-    .explanation-input textarea,
-    .assistant-input textarea {
-        background: #f8fbff !important;
-        border-color: rgba(147, 197, 253, 0.45) !important;
-        color: var(--text-primary) !important;
-    }
-
-    .threshold-slider input {
-        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+        border: 1px solid rgba(147, 197, 253, 0.5);
     }
 
     .primary-action,
     .primary-action button {
         width: 100%;
-        min-height: 54px;
+        min-height: 48px;
         border: none !important;
-        border-radius: 16px !important;
+        border-radius: 14px !important;
         background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
         color: #ffffff !important;
-        font-size: 1rem !important;
+        font-size: 0.98rem !important;
         font-weight: 800 !important;
-        box-shadow: 0 16px 30px rgba(37, 99, 235, 0.22);
+        box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
         transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
     }
 
@@ -2666,174 +2403,189 @@ def build_app():
     .primary-action button:hover {
         transform: translateY(-1px);
         filter: brightness(1.03);
-        box-shadow: 0 20px 32px rgba(37, 99, 235, 0.26);
+        box-shadow: 0 16px 28px rgba(37, 99, 235, 0.22);
     }
 
     .placeholder-note {
-        margin-top: 16px;
-        padding: 14px 16px;
-        border-radius: 18px;
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
         background: rgba(219, 234, 254, 0.55);
         border: 1px solid rgba(147, 197, 253, 0.35);
-        color: var(--text-muted);
-        font-size: 0.95rem;
-        line-height: 1.65;
-    }
-
-    .coming-soon-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border-radius: 999px;
-        background: rgba(37, 99, 235, 0.08);
-        color: var(--primary-dark);
-        font-size: 0.82rem;
-        font-weight: 800;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        color: var(--text-muted) !important;
+        font-size: 0.88rem;
+        line-height: 1.55;
     }
 
     .severity-stack {
-        display: grid;
-        gap: 12px;
-        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+        flex-wrap: wrap;
     }
 
     .severity-pill {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 10px 14px;
+        padding: 8px 12px;
         border-radius: 999px;
-        font-size: 0.92rem;
+        font-size: 0.88rem;
         font-weight: 800;
         width: fit-content;
     }
 
     .severity-low {
-        background: rgba(22, 163, 74, 0.10);
-        border: 1px solid rgba(22, 163, 74, 0.22);
-        color: var(--success);
-    }
-
-    .severity-medium {
-        background: rgba(245, 158, 11, 0.12);
-        border: 1px solid rgba(245, 158, 11, 0.25);
-        color: #b45309;
+        background: rgba(22, 163, 74, 0.10) !important;
+        border: 1px solid rgba(22, 163, 74, 0.22) !important;
+        color: var(--success) !important;
     }
 
     .severity-high {
-        background: rgba(220, 38, 38, 0.10);
-        border: 1px solid rgba(220, 38, 38, 0.22);
-        color: var(--danger);
+        background: rgba(220, 38, 38, 0.10) !important;
+        border: 1px solid rgba(220, 38, 38, 0.22) !important;
+        color: var(--danger) !important;
     }
 
     .explanation-input textarea {
-        min-height: 220px !important;
-        padding: 14px 16px !important;
-        line-height: 1.65 !important;
+        min-height: 240px !important;
+        padding: 12px 14px !important;
+        line-height: 1.55 !important;
+        font-size: 0.95rem !important;
+        color: #0f172a !important;
+        background-color: #ffffff !important;
     }
 
     .assistant-chip {
         display: inline-flex;
         align-items: center;
-        padding: 7px 12px;
+        padding: 6px 10px;
         border-radius: 999px;
         background: rgba(56, 189, 248, 0.10);
-        color: var(--primary-dark);
-        font-size: 0.92rem;
+        color: var(--primary-dark) !important;
+        font-size: 0.88rem;
         font-weight: 700;
     }
 
     .chat-preview {
         display: grid;
-        gap: 12px;
-        margin: 18px 0;
+        gap: 10px;
+        margin: 14px 0;
     }
 
     .chat-bubble {
         max-width: 92%;
-        padding: 14px 16px;
-        border-radius: 20px;
-        font-size: 0.95rem;
-        line-height: 1.6;
+        padding: 12px 14px;
+        border-radius: 18px;
+        font-size: 0.92rem;
+        line-height: 1.55;
         border: 1px solid transparent;
     }
 
     .chat-bubble-user {
         justify-self: end;
-        background: rgba(37, 99, 235, 0.10);
-        border-color: rgba(37, 99, 235, 0.18);
-        color: var(--primary-dark);
+        background: rgba(37, 99, 235, 0.10) !important;
+        border-color: rgba(37, 99, 235, 0.18) !important;
+        color: var(--primary-dark) !important;
     }
 
     .chat-bubble-assistant {
         justify-self: start;
-        background: rgba(248, 250, 252, 0.96);
-        border-color: rgba(203, 213, 225, 0.75);
-        color: var(--text-muted);
+        background: rgba(248, 250, 252, 0.96) !important;
+        border-color: rgba(203, 213, 225, 0.75) !important;
+        color: var(--text-primary) !important;
     }
 
-    .chat-role {
-        display: block;
-        margin-bottom: 6px;
-        font-size: 0.8rem;
-        font-weight: 800;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+    /* Clean Step 5 follow-up input container */
+    .assistant-compose {
+        background: #ffffff !important;
+        border: 1px solid rgba(147, 197, 253, 0.4) !important;
+        border-radius: 18px !important;
+        padding: 12px !important;
+        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.03) !important;
+        gap: 10px !important;
+        margin-top: 10px !important;
+    }
+
+    .assistant-compose .block,
+    .assistant-compose .form,
+    .assistant-compose .row {
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    .assistant-input,
+    .assistant-input textarea,
+    .assistant-input .container {
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
     }
 
     .assistant-input textarea {
-        min-height: 54px !important;
-        padding: 14px 16px !important;
-        color: #94a3b8 !important;
-        background: rgba(239, 246, 255, 0.85) !important;
+        min-height: 44px !important;
+        padding: 10px 12px !important;
+        color: #0f172a !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(147, 197, 253, 0.4) !important;
+        border-radius: 12px !important;
     }
 
     .assistant-button button {
-        min-height: 54px;
-        border-radius: 16px !important;
-        background: linear-gradient(135deg, #bfdbfe 0%, #dbeafe 100%) !important;
-        color: var(--primary-dark) !important;
+        min-height: 44px;
+        border-radius: 12px !important;
         font-weight: 800 !important;
-        border: 1px solid rgba(147, 197, 253, 0.42) !important;
-        opacity: 0.78;
+        border: 1px solid transparent !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
     }
 
-    .assistant-button button:disabled {
-        opacity: 0.72 !important;
+    .assistant-button button:disabled,
+    .assistant-button button[disabled] {
+        background: #eff6ff !important; /* light blue/gray background */
+        border: 1px solid rgba(147, 197, 253, 0.4) !important;
+        color: #1e3a8a !important; /* navy or muted blue text */
         cursor: not-allowed !important;
+        box-shadow: none !important;
+        opacity: 0.8 !important;
     }
 
+    .assistant-button button:not(:disabled):not([disabled]) {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 8px 16px rgba(37, 99, 235, 0.16) !important;
+    }
+
+    /* Step 6 summary workflow cards */
     .workflow-card {
-        padding: 28px;
+        padding: 24px !important;
     }
 
     .workflow-header {
         display: flex;
         align-items: flex-start;
-        gap: 14px;
-        margin-bottom: 18px;
+        gap: 12px;
+        margin-bottom: 16px;
     }
 
     .workflow-flow {
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 12px;
+        flex-direction: column;
+        gap: 8px;
     }
 
     .workflow-step {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 13px 16px;
-        border-radius: 18px;
-        background: rgba(248, 250, 252, 0.95);
-        border: 1px solid rgba(191, 219, 254, 0.72);
-        color: var(--text-primary);
-        font-size: 0.95rem;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(248, 250, 252, 0.95) !important;
+        border: 1px solid rgba(191, 219, 254, 0.72) !important;
+        color: var(--text-primary) !important;
+        font-size: 0.88rem;
         font-weight: 700;
     }
 
@@ -2841,27 +2593,28 @@ def build_app():
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--accent-cyan) 100%);
-        color: #ffffff;
-        font-size: 0.76rem;
+        width: 24px;
+        height: 24px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent-cyan) 100%) !important;
+        color: #ffffff !important;
+        font-size: 0.7rem;
         font-weight: 800;
     }
 
     .workflow-arrow {
-        color: var(--primary);
-        font-size: 1.2rem;
+        color: var(--primary) !important;
+        font-size: 1rem;
         font-weight: 800;
+        text-align: center;
     }
 
     .status-banner {
         display: flex;
         align-items: flex-start;
-        gap: 14px;
-        padding: 18px 20px;
-        border-radius: 18px;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 16px;
         border: 1px solid transparent;
     }
 
@@ -2869,13 +2622,13 @@ def build_app():
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
-        height: 36px;
-        flex: 0 0 36px;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
         border-radius: 50%;
-        font-size: 1rem;
+        font-size: 0.9rem;
         font-weight: 800;
-        background: rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.72) !important;
     }
 
     .status-copy {
@@ -2884,14 +2637,14 @@ def build_app():
 
     .status-label {
         margin: 0;
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 800;
     }
 
     .status-message {
-        margin: 6px 0 0;
-        font-size: 0.95rem;
-        line-height: 1.6;
+        margin: 4px 0 0;
+        font-size: 0.88rem;
+        line-height: 1.5;
     }
 
     .tone-alert {
@@ -2959,17 +2712,11 @@ def build_app():
     }
 
     .footer-card {
-        padding: 18px 22px;
+        padding: 16px 20px;
         text-align: center;
-        color: var(--text-muted);
-        font-size: 0.95rem;
+        color: var(--text-muted) !important;
+        font-size: 0.92rem;
         background: rgba(255, 255, 255, 0.88);
-    }
-
-    .upload-card button,
-    .output-card button,
-    .panel-card button {
-        font-family: inherit !important;
     }
 
     .panel-card .gradio-container,
@@ -2977,13 +2724,19 @@ def build_app():
         background: transparent !important;
     }
 
-    @media (max-width: 1080px) {
-        .hero-grid {
-            grid-template-columns: 1fr;
+    @media (max-width: 1300px) {
+        .panel-card {
+            flex: 1 1 30% !important; /* wraps nicely on medium screen */
         }
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 768px) {
+        .content-grid {
+            flex-direction: column !important;
+        }
+        .panel-card {
+            flex: 1 1 100% !important; /* stacks vertically on mobile */
+        }
         .gradio-container {
             padding: 20px 14px 28px !important;
         }
@@ -3035,57 +2788,74 @@ def build_app():
         title="Total Accident Detection & Road Safety Intelligence",
     ) as demo:
         with gr.Column(elem_id="page-shell"):
-            with gr.Column(elem_classes="hero-card"):
-                gr.HTML(
-                    """
-                    <div class="hero-grid">
-                        <div class="hero-copy">
-                            <span class="hero-label">CAPSTONE PROJECT INTERFACE</span>
-                            <h1 class="hero-title">Total Accident Detection</h1>
-                            <p class="hero-subtitle">
-                                Capstone Project &ndash; AI-Based Road Accident Detection System
-                            </p>
-                            <p class="hero-description">
-                                Detect accidents from images and videos, classify severity, and assist with Jordan Traffic Law guidance.
-                                This interface presents the current YOLO detection stage while previewing the future smart-road safety workflow.
-                            </p>
+            # Gradient Top Header Banner
+            gr.HTML(
+                """
+                <div class="hero-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #1d4ed8 100%); padding: 40px; border-radius: 24px; color: white; margin-bottom: 24px; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.15);">
+                    <h1 style="margin: 0; font-size: 2.5rem; font-weight: 900; letter-spacing: -0.03em; color: white;">Accident Detection and Traffic Law Workflow</h1>
+                    <p style="margin: 12px 0 0; font-size: 1.15rem; font-weight: 500; opacity: 0.95; line-height: 1.5; color: #dbeafe;">
+                        Upload road evidence, run YOLO accident detection, classify severity, and review the Jordan Traffic Law assistant report.
+                    </p>
+                </div>
+                """
+            )
+
+            # Workflow Strip (Steps 01-06 horizontal demo pipeline)
+            gr.HTML(
+                """
+                <div class="workflow-strip-card" style="background: white; border: 1px solid rgba(147, 197, 253, 0.45); border-radius: 20px; padding: 20px; margin-bottom: 26px; box-shadow: 0 4px 20px rgba(29, 78, 216, 0.04);">
+                    <div style="font-size: 0.8rem; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;">Workflow / Capstone Demo Pipeline</div>
+                    <div class="workflow-strip-steps" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">01</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Upload Image / Video</span>
                         </div>
-                        <div class="hero-aside">
-                            <div class="hero-aside-card">
-                                <p class="hero-aside-label">Future System Scope</p>
-                                <h2 class="hero-aside-title">AI Traffic Safety Dashboard</h2>
-                                <div class="hero-feature-list">
-                                    <div class="hero-feature">
-                                        <span class="hero-feature-badge">DET</span>
-                                        Accident detection from image and video evidence
-                                    </div>
-                                    <div class="hero-feature">
-                                        <span class="hero-feature-badge">SEV</span>
-                                        Severity estimation for incident triage and review
-                                    </div>
-                                    <div class="hero-feature">
-                                        <span class="hero-feature-badge">LAW</span>
-                                        Jordan Traffic Law assistant for future guidance workflows
-                                    </div>
-                                </div>
-                            </div>
+                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">02</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">YOLO Accident Detection</span>
+                        </div>
+                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">03</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Severity Classification</span>
+                        </div>
+                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">04</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Jordan Traffic Law Assistant</span>
+                        </div>
+                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">05</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">User Discussion / Follow-up Context</span>
+                        </div>
+                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
+                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
+                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">06</span>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Final Report / Summary</span>
                         </div>
                     </div>
-                    """
-                )
-                gr.HTML(build_model_badge(BEST_MODEL_PATH))
+                </div>
+                """
+            )
 
+            # Model Weights Status Badge
+            gr.HTML(build_model_badge(BEST_MODEL_PATH))
+
+            # Main Full-width Dashboard Row
             with gr.Row(equal_height=True, elem_classes="content-grid"):
+                # Column 1: Step 1 (Upload Card) - scale=5
                 with gr.Column(scale=5, elem_classes="panel-card upload-card"):
                     gr.HTML(
                         """
                         <div class="panel-intro">
                             <span class="section-icon">IN</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">Accident Detection Input</p>
-                                <h2 class="panel-title">Accident Detection Input</h2>
+                                <p class="panel-kicker">Step 1: Upload Image / Video</p>
+                                <h2 class="panel-title">Accident Evidence</h2>
                                 <p class="panel-description">
-                                    Choose between Image or Video testing mode, upload your file, tune parameters, and trigger YOLO detection.
+                                    Choose testing mode, upload your file, and set YOLO detection threshold.
                                 </p>
                             </div>
                         </div>
@@ -3108,16 +2878,17 @@ def build_app():
                             elem_id="image-preview-input",
                             interactive=True,
                         )
-                        threshold_readout = gr.HTML(build_threshold_readout(0.25))
-                        conf_slider = gr.Slider(
-                            minimum=0.01,
-                            maximum=1.0,
-                            value=0.25,
-                            step=0.01,
-                            show_label=False,
-                            elem_classes="threshold-slider",
-                            elem_id="image-confidence-slider",
-                        )
+                        with gr.Column(elem_classes="threshold-card"):
+                            threshold_readout = gr.HTML(build_threshold_readout(0.25))
+                            conf_slider = gr.Slider(
+                                minimum=0.01,
+                                maximum=1.0,
+                                value=0.25,
+                                step=0.01,
+                                show_label=False,
+                                elem_classes="threshold-slider",
+                                elem_id="image-confidence-slider",
+                            )
                         submit_btn = gr.Button(
                             "Run Inference",
                             variant="primary",
@@ -3143,16 +2914,17 @@ def build_app():
                             elem_id="video-preview-input",
                             interactive=True,
                         )
-                        video_threshold_readout = gr.HTML(build_threshold_readout(0.25))
-                        video_conf_slider = gr.Slider(
-                            minimum=0.01,
-                            maximum=1.0,
-                            value=0.25,
-                            step=0.01,
-                            show_label=False,
-                            elem_classes="threshold-slider",
-                            elem_id="video-confidence-slider",
-                        )
+                        with gr.Column(elem_classes="threshold-card"):
+                            video_threshold_readout = gr.HTML(build_threshold_readout(0.25))
+                            video_conf_slider = gr.Slider(
+                                minimum=0.01,
+                                maximum=1.0,
+                                value=0.25,
+                                step=0.01,
+                                show_label=False,
+                                elem_classes="threshold-slider",
+                                elem_id="video-confidence-slider",
+                            )
                         video_submit_btn = gr.Button(
                             "Run Video Inference",
                             variant="primary",
@@ -3160,16 +2932,17 @@ def build_app():
                             elem_id="run-video-inference-btn",
                         )
 
-                with gr.Column(scale=6, elem_classes="panel-card output-card", elem_id="detection-output-panel"):
+                # Column 2: Steps 2-3 (Detection & Severity Output Section) - scale=9 (wider feedback card)
+                with gr.Column(scale=9, elem_classes="panel-card output-card", elem_id="detection-output-panel"):
                     gr.HTML(
                         """
                         <div class="panel-intro">
                             <span class="section-icon">OUT</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">YOLO Detection Output</p>
-                                <h2 class="panel-title">YOLO Detection Output</h2>
+                                <p class="panel-kicker">Steps 2 &amp; 3: YOLO Accident Detection &amp; Severity Classification</p>
+                                <h2 class="panel-title">Detection and severity output</h2>
                                 <p class="panel-description">
-                                    Inspect the detection status banner and rendered output with bounding boxes from the active model.
+                                    Monitor the alert state, review the current workflow message, and inspect the annotated detection output.
                                 </p>
                             </div>
                         </div>
@@ -3183,6 +2956,23 @@ def build_app():
                     alert_signal_output = gr.HTML(
                         value=build_alert_signal(False, "idle", "image"),
                         elem_id="alert-signal-region",
+                    )
+
+                    # Severity classification category indicators inside output card!
+                    gr.HTML(
+                        """
+                        <div style="margin-top: 14px; margin-bottom: 16px;">
+                            <div style="font-size: 0.78rem; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Active Severity Categories</div>
+                            <div class="severity-stack" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <span class="severity-pill severity-low">Low Severity</span>
+                                <span class="severity-pill severity-high">Severe Severity</span>
+                            </div>
+                            <div class="placeholder-note" style="margin-top: 8px; margin-bottom: 0; padding: 10px 12px; font-size: 0.82rem; background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(147, 197, 253, 0.3);">
+                                Categories: moderate-accident, severe-accident, no-accident (mapped to Low Severity). Detections are classified dynamically.
+                            </div>
+                        </div>
+                        """,
+                        visible=False
                     )
 
                     # IMAGE OUTPUT GROUP
@@ -3224,70 +3014,18 @@ def build_app():
                             visible=True
                         )
 
-            with gr.Row(equal_height=True, elem_classes="content-grid"):
-                with gr.Column(scale=4, elem_classes="panel-card"):
-                    gr.HTML(
-                        """
-                        <div class="panel-intro">
-                            <span class="section-icon">SEV</span>
-                            <div class="panel-copy">
-                                <p class="panel-kicker">Integrated Pipeline</p>
-                                <h2 class="panel-title">Accident Severity Classification</h2>
-                                <p class="panel-description">
-                                    Sequential classification active: accident bounding boxes are cropped and analyzed to determine accident severity.
-                                </p>
-                            </div>
-                        </div>
-                        <div class="severity-stack">
-                            <span class="severity-pill severity-low">Moderate Severity</span>
-                            <span class="severity-pill severity-high">Severe Severity</span>
-                        </div>
-                        <div class="placeholder-note">
-                            Active classifier categories: moderate-accident, severe-accident, no-accident. Detections are cropped and classified dynamically.
-                        </div>
-                        """
-                    )
-
-                with gr.Column(scale=4, elem_classes="panel-card"):
-                    gr.HTML(
-                        """
-                        <div class="panel-intro">
-                            <span class="section-icon">TXT</span>
-                            <div class="panel-copy">
-                                <p class="panel-kicker">Scenario Context</p>
-                                <h2 class="panel-title">Accident Explanation</h2>
-                                <p class="panel-description">
-                                    Capture scene details that will later be forwarded to the assistant workflow.
-                                </p>
-                            </div>
-                        </div>
-                        """
-                    )
-                    explanation_input = gr.Textbox(
-                        lines=7,
-                        label="Scenario Description",
-                        placeholder="Describe the accident scenario, vehicle movement, road conditions, and any relevant details...",
-                        elem_classes="explanation-input",
-                        elem_id="scenario-explanation-input",
-                    )
-                    gr.HTML(
-                        """
-                        <div class="placeholder-note">
-                            This input is a UI placeholder for the future assistant workflow and currently does not affect detection inference.
-                        </div>
-                        """
-                    )
-
-                with gr.Column(scale=5, elem_classes="panel-card"):
+                # Column 3: Step 4 (Accident Law Assistant & Follow-up Chat) - scale=6
+                with gr.Column(scale=6, elem_classes="panel-card"):
                     gr.HTML(
                         """
                         <div class="panel-intro">
                             <span class="section-icon">LAW</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">Jordanian KAG Agent</p>
-                                <h2 class="panel-title">Jordan Traffic Law Assistant</h2>
-                                <p class="panel-description">
+                                <p class="panel-kicker">Step 4: Accident Law Assistant &amp; Follow-up Chat</p>
+                                <h2 class="panel-title">Jordan Traffic Law Assistant Chat</h2>
+                                <p class="panel-description" style="margin-top: 6px;">
                                     <span class="assistant-chip">قانون السير الأردني</span>
+                                    Ask follow-up questions or discuss the AI liability analysis below.
                                 </p>
                             </div>
                         </div>
@@ -3298,7 +3036,8 @@ def build_app():
                         elem_id="law-chatbot",
                         elem_classes="chat-preview",
                     )
-                    with gr.Row():
+                    
+                    with gr.Row(elem_classes="assistant-compose"):
                         law_prompt = gr.Textbox(
                             lines=1,
                             show_label=False,
@@ -3318,32 +3057,41 @@ def build_app():
                     agent_state = gr.State(None)
                     chat_history = gr.State([])
 
-            with gr.Column(elem_classes="workflow-card"):
-                gr.HTML(
-                    """
-                    <div class="workflow-header">
-                        <span class="section-icon">FLOW</span>
-                        <div class="panel-copy">
-                            <p class="panel-kicker">Results Summary</p>
-                            <h2 class="panel-title">Future Workflow Overview</h2>
-                            <p class="panel-description">
-                                The full capstone system roadmap for evaluators and demonstration walkthroughs.
-                            </p>
+                # Column 4: Step 5 (Final Report / Summary) - scale=5
+                with gr.Column(scale=5, elem_classes="panel-card workflow-card", visible=False):
+                    gr.HTML(
+                        """
+                        <div class="workflow-header">
+                            <span class="section-icon">FLOW</span>
+                            <div class="panel-copy">
+                                <p class="panel-kicker">Step 5: Final Report / Summary</p>
+                                <h2 class="panel-title">Final Report Summary</h2>
+                                <p class="panel-description">
+                                    The full Sequential Pipeline workflow and active Capstone system roadmap.
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                    <div class="workflow-flow">
-                        <div class="workflow-step"><span class="workflow-step-badge">1</span>Upload Image/Video</div>
-                        <span class="workflow-arrow">&rarr;</span>
-                        <div class="workflow-step"><span class="workflow-step-badge">2</span>Detect Accident</div>
-                        <span class="workflow-arrow">&rarr;</span>
-                        <div class="workflow-step"><span class="workflow-step-badge">3</span>Classify Severity</div>
-                        <span class="workflow-arrow">&rarr;</span>
-                        <div class="workflow-step"><span class="workflow-step-badge">4</span>Explain Scenario</div>
-                        <span class="workflow-arrow">&rarr;</span>
-                        <div class="workflow-step"><span class="workflow-step-badge">5</span>Ask Jordan Traffic Law Assistant</div>
-                    </div>
-                    """
-                )
+                        <div class="workflow-flow" style="display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 14px;">
+                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">1</span>Step 1: Upload Image / Video</div>
+                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
+                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">2</span>Step 2: YOLO Accident Detection</div>
+                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
+                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">3</span>Step 3: Severity Classification</div>
+                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
+                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">4</span>Step 4: Accident Law Assistant &amp; Follow-up Chat</div>
+                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
+                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">5</span>Step 5: Final Report / Summary</div>
+                        </div>
+                        """
+                    )
+
+            # Step 5: Final Detection Summary Section (Full-Width Card under the top row)
+            with gr.Row():
+                with gr.Column(scale=12):
+                    final_summary_output = gr.HTML(
+                        value=render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
+                        elem_id="final-detection-summary-region"
+                    )
 
             gr.HTML(
                 """
@@ -3380,6 +3128,7 @@ def build_app():
                     gr.update(visible=False), # Hide video placeholder in Image mode
                     build_alert_banner("standby", "image"),
                     build_alert_signal(False, "idle", "image"),
+                    render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
                 )
             else:
                 return (
@@ -3406,6 +3155,7 @@ def build_app():
                     gr.update(visible=True),  # Show video placeholder in Video mode
                     build_alert_banner("standby", "video"),
                     build_alert_signal(False, "idle", "video"),
+                    render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
                 )
 
         input_mode.change(
@@ -3425,6 +3175,7 @@ def build_app():
                 video_placeholder,
                 alert_banner_output,
                 alert_signal_output,
+                final_summary_output,
             ],
         )
 
@@ -3432,34 +3183,34 @@ def build_app():
         image_input.upload(
             fn=handle_image_upload,
             inputs=image_input,
-            outputs=[status_output, image_output, alert_banner_output, alert_signal_output],
+            outputs=[status_output, image_output, alert_banner_output, alert_signal_output, final_summary_output],
         )
         image_input.clear(
             fn=handle_image_clear,
-            outputs=[status_output, image_output, alert_banner_output, alert_signal_output],
+            outputs=[status_output, image_output, alert_banner_output, alert_signal_output, final_summary_output],
         )
 
         video_input.upload(
             fn=handle_video_upload,
             inputs=video_input,
-            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output],
+            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output, final_summary_output],
         )
         video_input.clear(
             fn=handle_video_clear,
-            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output],
+            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output, final_summary_output],
         )
 
         # Inference Trigger Event Handlers
         submit_btn.click(
             fn=run_image_inference,
             inputs=[image_input, conf_slider, chat_history, agent_state],
-            outputs=[image_output, status_output, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history],
+            outputs=[image_output, status_output, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history, final_summary_output],
         )
 
         video_submit_btn.click(
             fn=run_video_inference,
             inputs=[video_input, video_conf_slider, chat_history, agent_state],
-            outputs=[video_output, video_status_output, video_placeholder, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history],
+            outputs=[video_output, video_status_output, video_placeholder, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history, final_summary_output],
         )
 
         def initiate_chat(user_message, chat_history):
@@ -3533,7 +3284,6 @@ def build_app():
     demo._deprecated_theme = blue_theme
     demo._deprecated_css = custom_css
     return demo
-
 
 if __name__ == "__main__":
     app = build_app()
