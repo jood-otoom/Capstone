@@ -190,6 +190,16 @@ def build_pipeline_status_banner(
                 <span style="font-size: 0.88rem; font-weight: 600; opacity: 0.9; margin-top: 4px; color: #1e3a8a !important;">Confidence: <b style="color: #1e3a8a !important;">{sev_conf_str}</b></span>
             </div>
         </div>
+
+        <div style="background: rgba(255, 255, 255, 0.82); color: #1e3a8a !important; padding: 12px 16px; border-radius: 14px; border: 1px solid rgba(30, 58, 138, 0.15); display: flex; flex-direction: column; gap: 4px; width: 100%; box-sizing: border-box; margin-top: 4px;">
+            <span style="font-size: 0.78rem; text-transform: uppercase; font-weight: 800; opacity: 0.75; letter-spacing: 0.04em; color: #1e3a8a !important;">Location Detection Result</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: #0f172a !important;">
+                Amman, Jordan &bull; 
+                <a href="https://maps.google.com/?q=31.9539,35.9106" target="_blank" rel="noopener noreferrer" style="color: #2563eb !important; text-decoration: underline !important; font-weight: 800; font-size: 0.92rem; display: inline-flex; align-items: center; gap: 4px;">
+                    View on Google Maps (31.9539, 35.9106) &nearr;
+                </a>
+            </span>
+        </div>
         
         {video_stats_html}
     </div>

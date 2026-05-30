@@ -5,7 +5,7 @@ from ui_app.agent_service import safe_agent_call
 def render_chat_html(chat_history):
     if not chat_history:
         return """
-        <div style="text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.98rem; line-height: 1.6; background: rgba(248, 250, 252, 0.6); border: 1px dashed var(--card-border); border-radius: 20px; margin: 18px 0; min-height: 480px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
+        <div style="text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.98rem; line-height: 1.6; background: rgba(248, 250, 252, 0.6); border: 1px dashed var(--card-border); border-radius: 20px; margin: 18px 0; min-height: 600px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
             <div style="font-size: 2.2rem;">&#129302;</div>
             <div style="font-weight: 800; color: var(--primary-dark); font-size: 1.15rem;">Accident Law Assistant Chat</div>
             <div style="max-width: 420px; opacity: 0.85;">
@@ -14,7 +14,7 @@ def render_chat_html(chat_history):
         </div>
         """
     
-    html = '<div class="chat-preview" style="height: 480px; max-height: 480px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; margin: 18px 0; background: rgba(248, 250, 252, 0.3); border-radius: 16px; border: 1px solid var(--card-border);">'
+    html = '<div class="chat-preview" style="height: 600px; max-height: 600px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; margin: 18px 0; background: rgba(248, 250, 252, 0.3); border-radius: 16px; border: 1px solid var(--card-border);">'
     for role, text in chat_history:
         if role == "User":
             html += f"""

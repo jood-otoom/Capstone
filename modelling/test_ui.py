@@ -31,7 +31,7 @@ from ui_app.alerts import build_alert_banner, build_alert_controls, build_alert_
 from ui_app.agent_service import APIKeyManager, api_key_manager, safe_agent_call, get_accident_agent
 from ui_app.chat_service import render_chat_html, initiate_chat, generate_chat_reply
 from ui_app.detection_pipeline import detect_accident_from_result, detect_accident_from_collection
-from ui_app.combined_pipeline import AccidentSeverityPipeline, pipeline, BEST_MODEL_PATH, run_image_inference, run_video_inference, handle_image_upload, handle_video_upload, handle_image_clear, handle_video_clear
+from ui_app.combined_pipeline import AccidentSeverityPipeline, pipeline, BEST_MODEL_PATH, run_image_inference, run_video_inference, handle_image_upload, handle_video_upload, handle_image_clear, handle_video_clear, run_model_inference_flow, run_agent_analysis_flow
 
 # Resolve dynamic project root path
 
@@ -1066,6 +1066,84 @@ def build_app():
             width: 100%;
         }
     }
+
+    /* STEP 1: Upload Section Cleanup */
+    #evidence-upload {
+        min-height: 90px !important;
+        border: 1px dashed rgba(147, 197, 253, 0.6) !important;
+        border-radius: 18px !important;
+        background: rgba(248, 250, 252, 0.8) !important;
+        padding: 8px !important;
+        margin-bottom: 0 !important;
+    }
+    #evidence-upload .file-preview {
+        display: none !important; /* Hide file list preview inside upload component */
+    }
+    #evidence-upload svg,
+    #evidence-upload .icon-wrap,
+    #evidence-upload .file-preview-holder svg {
+        width: 28px !important;
+        height: 28px !important;
+        margin-bottom: 0 !important;
+    }
+    #evidence-upload .file-drop {
+        min-height: 70px !important;
+        padding: 6px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+    }
+    #evidence-upload .file-drop span {
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+        color: #1e40af !important;
+    }
+    
+    #clear-evidence-btn {
+        margin-top: 12px !important;
+        background: #f1f5f9 !important;
+        color: #475569 !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        font-size: 0.88rem !important;
+        padding: 8px 16px !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        min-height: 38px !important;
+        width: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    #clear-evidence-btn:hover {
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+        border-color: #94a3b8 !important;
+    }
+
+    /* STEP 2: Spacing & Whitespace collapsing */
+    /* Do not hide parent detection containers; only hide empty spacer placeholders. */
+    #emergency-alert-region,
+    #alert-signal-region {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        display: none !important;
+    }
+
+    /* STEP 4: Chat display viewport scroll */
+    #law-chatbot {
+        max-height: 600px !important;
+        overflow-y: auto !important;
+    }
     """
     blue_theme = gr.themes.Soft(
         primary_hue=gr.themes.colors.blue,
@@ -1089,49 +1167,6 @@ def build_app():
                 """
             )
 
-            # Workflow Strip (Steps 01-06 horizontal demo pipeline)
-            gr.HTML(
-                """
-                <div class="workflow-strip-card" style="background: white; border: 1px solid rgba(147, 197, 253, 0.45); border-radius: 20px; padding: 20px; margin-bottom: 26px; box-shadow: 0 4px 20px rgba(29, 78, 216, 0.04);">
-                    <div style="font-size: 0.8rem; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;">Workflow / Capstone Demo Pipeline</div>
-                    <div class="workflow-strip-steps" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">01</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Upload Image / Video</span>
-                        </div>
-                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">02</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">YOLO Accident Detection</span>
-                        </div>
-                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">03</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Severity Classification</span>
-                        </div>
-                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">04</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Jordan Traffic Law Assistant</span>
-                        </div>
-                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">05</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">User Discussion / Follow-up Context</span>
-                        </div>
-                        <div style="font-weight: 800; color: #2563eb; font-size: 1.2rem;">&rarr;</div>
-                        <div class="workflow-strip-step" style="flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #eff6ff; border-radius: 12px; border: 1px solid rgba(147, 197, 253, 0.35);">
-                            <span style="font-size: 1.1rem; font-weight: 900; color: #2563eb;">06</span>
-                            <span style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a;">Final Report / Summary</span>
-                        </div>
-                    </div>
-                </div>
-                """
-            )
-
-            # Model Weights Status Badge
-            gr.HTML(build_model_badge(BEST_MODEL_PATH))
-
             # Main Full-width Dashboard Row
             with gr.Row(equal_height=True, elem_classes="content-grid"):
                 # Column 1: Step 1 (Upload Card) - scale=5
@@ -1141,85 +1176,49 @@ def build_app():
                         <div class="panel-intro">
                             <span class="section-icon">IN</span>
                             <div class="panel-copy">
-                                <p class="panel-kicker">Step 1: Upload Image / Video</p>
+                                <p class="panel-kicker">Step 1: Upload Evidence</p>
                                 <h2 class="panel-title">Accident Evidence</h2>
                                 <p class="panel-description">
-                                    Choose testing mode, upload your file, and set YOLO detection threshold.
+                                    Upload a road image or video to automatically run accident detection.
                                 </p>
                             </div>
                         </div>
                         """
                     )
                     
-                    input_mode = gr.Radio(
-                        choices=["Image", "Video"],
-                        value="Image",
-                        label="Select Input Mode",
+                    evidence_upload = gr.File(
+                        label="Upload Accident Evidence (Image or Video)",
+                        file_types=["image", "video"],
+                        type="filepath",
                         elem_classes="mode-selector",
+                        elem_id="evidence-upload"
                     )
                     
-                    # IMAGE INPUT GROUP
+                    # IMAGE PREVIEW GROUP
                     with gr.Column(visible=True) as image_input_group:
                         image_input = gr.Image(
                             type="numpy",
-                            label="Upload and Preview Road Image",
+                            label="Road Image Preview",
                             elem_classes="image-shell",
                             elem_id="image-preview-input",
-                            interactive=True,
-                        )
-                        with gr.Column(elem_classes="threshold-card"):
-                            threshold_readout = gr.HTML(build_threshold_readout(0.25))
-                            conf_slider = gr.Slider(
-                                minimum=0.01,
-                                maximum=1.0,
-                                value=0.25,
-                                step=0.01,
-                                show_label=False,
-                                elem_classes="threshold-slider",
-                                elem_id="image-confidence-slider",
-                            )
-                        submit_btn = gr.Button(
-                            "Run Inference",
-                            variant="primary",
-                            elem_classes="primary-action",
-                            elem_id="run-image-inference-btn",
+                            interactive=False,
                         )
                     
-                    # VIDEO INPUT GROUP
+                    # VIDEO PREVIEW GROUP
                     with gr.Column(visible=False) as video_input_group:
-                        gr.HTML(
-                            """
-                            <div class="placeholder-note" style="margin-top: 0; margin-bottom: 14px; background: rgba(37, 99, 235, 0.08); border-color: rgba(147, 197, 253, 0.45); color: var(--primary-dark); font-weight: 600;">
-                                Video Inference Testing Mode<br/>
-                                <span style="font-weight: 400; font-size: 0.9em; opacity: 0.95;">
-                                    For faster testing, use short MP4 clips between 3–10 seconds.
-                                </span>
-                            </div>
-                            """
-                        )
                         video_input = gr.Video(
-                            label="Upload and Preview Road Video",
+                            label="Road Video Preview",
                             elem_classes="image-shell",
                             elem_id="video-preview-input",
-                            interactive=True,
+                            interactive=False,
                         )
-                        with gr.Column(elem_classes="threshold-card"):
-                            video_threshold_readout = gr.HTML(build_threshold_readout(0.25))
-                            video_conf_slider = gr.Slider(
-                                minimum=0.01,
-                                maximum=1.0,
-                                value=0.25,
-                                step=0.01,
-                                show_label=False,
-                                elem_classes="threshold-slider",
-                                elem_id="video-confidence-slider",
-                            )
-                        video_submit_btn = gr.Button(
-                            "Run Video Inference",
-                            variant="primary",
-                            elem_classes="primary-action",
-                            elem_id="run-video-inference-btn",
-                        )
+                    
+                    clear_btn = gr.Button(
+                        "Upload New Evidence / Reset",
+                        visible=False,
+                        elem_classes="assistant-button",
+                        elem_id="clear-evidence-btn"
+                    )
 
                 # Column 2: Steps 2-3 (Detection & Severity Output Section) - scale=9 (wider feedback card)
                 with gr.Column(scale=9, elem_classes="panel-card output-card", elem_id="detection-output-panel"):
@@ -1330,7 +1329,7 @@ def build_app():
                         law_prompt = gr.Textbox(
                             lines=1,
                             show_label=False,
-                            placeholder="Upload an accident and run inference to start AI analysis...",
+                            placeholder="Upload accident evidence to start AI analysis...",
                             interactive=False,
                             elem_classes="assistant-input",
                             elem_id="law-assistant-prompt",
@@ -1346,42 +1345,6 @@ def build_app():
                     agent_state = gr.State(None)
                     chat_history = gr.State([])
 
-                # Column 4: Step 5 (Final Report / Summary) - scale=5
-                with gr.Column(scale=5, elem_classes="panel-card workflow-card", visible=False):
-                    gr.HTML(
-                        """
-                        <div class="workflow-header">
-                            <span class="section-icon">FLOW</span>
-                            <div class="panel-copy">
-                                <p class="panel-kicker">Step 5: Final Report / Summary</p>
-                                <h2 class="panel-title">Final Report Summary</h2>
-                                <p class="panel-description">
-                                    The full Sequential Pipeline workflow and active Capstone system roadmap.
-                                </p>
-                            </div>
-                        </div>
-                        <div class="workflow-flow" style="display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 14px;">
-                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">1</span>Step 1: Upload Image / Video</div>
-                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
-                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">2</span>Step 2: YOLO Accident Detection</div>
-                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
-                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">3</span>Step 3: Severity Classification</div>
-                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
-                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">4</span>Step 4: Accident Law Assistant &amp; Follow-up Chat</div>
-                            <span class="workflow-arrow" style="font-size: 1.1rem; line-height: 1;">&darr;</span>
-                            <div class="workflow-step" style="width: 100%;"><span class="workflow-step-badge">5</span>Step 5: Final Report / Summary</div>
-                        </div>
-                        """
-                    )
-
-            # Step 5: Final Detection Summary Section (Full-Width Card under the top row)
-            with gr.Row():
-                with gr.Column(scale=12):
-                    final_summary_output = gr.HTML(
-                        value=render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
-                        elem_id="final-detection-summary-region"
-                    )
-
             gr.HTML(
                 """
                 <div class="footer-card">
@@ -1390,116 +1353,119 @@ def build_app():
                 """
             )
 
-        # Mode Switching Transition Event Handler
-        def on_mode_change(mode):
-            if mode == "Image":
-                return (
-                    gr.update(visible=True),  # image_input_group
-                    gr.update(visible=False), # video_input_group
-                    gr.update(visible=True),  # image_output_group
-                    gr.update(visible=False), # video_output_group
-                    None,                     # Clear video_input
-                    None,                     # Clear video_output
-                    build_status_banner(
-                        title="No video uploaded",
-                        message="Please switch to video mode and upload a video to test.",
-                        tone="neutral",
-                        icon="&#9711;",
-                    ),                        # Reset video status
-                    None,                     # Clear image_input
-                    None,                     # Clear image_output
-                    build_status_banner(
-                        title="Awaiting inference",
-                        message="Upload a road image and click Run Inference to generate an accident detection result.",
-                        tone="neutral",
-                        icon="&#9711;",
-                    ),                        # Reset image status
-                    gr.update(visible=False), # Hide video placeholder in Image mode
-                    build_alert_banner("standby", "image"),
-                    build_alert_signal(False, "idle", "image"),
-                    render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
-                )
-            else:
-                return (
-                    gr.update(visible=False), # image_input_group
-                    gr.update(visible=True),  # video_input_group
-                    gr.update(visible=False), # image_output_group
-                    gr.update(visible=True),  # video_output_group
-                    None,                     # Clear video_input
-                    None,                     # Clear video_output
-                    build_status_banner(
-                        title="No video uploaded",
-                        message="Upload a road video and click Run Video Inference to generate an accident detection result.",
-                        tone="neutral",
-                        icon="&#8682;",
-                    ),                        # Reset video status
-                    None,                     # Clear image_input
-                    None,                     # Clear image_output
-                    build_status_banner(
-                        title="Awaiting inference",
-                        message="Please switch to image mode and upload an image to test.",
-                        tone="neutral",
-                        icon="&#9711;",
-                    ),                        # Reset image status
-                    gr.update(visible=True),  # Show video placeholder in Video mode
-                    build_alert_banner("standby", "video"),
-                    build_alert_signal(False, "idle", "video"),
-                    render_final_summary_html(None, 0.0, None, 0.0, "Not Escalated", ""),
-                )
-
-        input_mode.change(
-            fn=on_mode_change,
-            inputs=input_mode,
+        # Unified Upload Chained Event Handlers
+        upload_event = evidence_upload.upload(
+            fn=run_model_inference_flow,
+            inputs=evidence_upload,
             outputs=[
+                image_input,
+                video_input,
                 image_input_group,
                 video_input_group,
                 image_output_group,
                 video_output_group,
-                video_input,
-                video_output,
-                video_status_output,
-                image_input,
                 image_output,
+                video_output,
                 status_output,
-                video_placeholder,
+                video_status_output,
                 alert_banner_output,
                 alert_signal_output,
-                final_summary_output,
-            ],
+                chatbot,
+                law_prompt,
+                law_button,
+                chat_history,
+                evidence_upload,
+                clear_btn
+            ]
+        )
+        
+        upload_event.then(
+            fn=run_agent_analysis_flow,
+            inputs=[evidence_upload, chat_history, agent_state],
+            outputs=[
+                chatbot,
+                law_prompt,
+                law_button,
+                agent_state,
+                chat_history
+            ]
         )
 
-        # Upload and Clear Event handlers to dynamically update status banners
-        image_input.upload(
-            fn=handle_image_upload,
-            inputs=image_input,
-            outputs=[status_output, image_output, alert_banner_output, alert_signal_output, final_summary_output],
-        )
-        image_input.clear(
-            fn=handle_image_clear,
-            outputs=[status_output, image_output, alert_banner_output, alert_signal_output, final_summary_output],
+        def handle_evidence_clear():
+            status_banner = build_status_banner(
+                title="Awaiting inference",
+                message="Upload a road image or video file to automatically start accident detection.",
+                tone="neutral",
+                icon="&#9711;",
+            )
+            video_status_banner = build_status_banner(
+                title="Awaiting video inference",
+                message="Upload a road video file to automatically start accident detection.",
+                tone="neutral",
+                icon="&#8682;",
+            )
+            return (
+                None, None,
+                gr.update(visible=True), gr.update(visible=False),
+                gr.update(visible=True), gr.update(visible=False),
+                None, None,
+                status_banner, video_status_banner,
+                build_alert_banner("standby", "image"),
+                build_alert_signal(False, "idle", "image"),
+                render_chat_html([]),
+                gr.update(interactive=False, placeholder="Upload accident evidence to start AI analysis..."),
+                gr.update(interactive=False, value="Locked"),
+                [],
+                gr.update(visible=True, value=None),  # Show evidence_upload and clear its value
+                gr.update(visible=False)              # Hide clear_btn
+            )
+
+        evidence_upload.clear(
+            fn=handle_evidence_clear,
+            outputs=[
+                image_input,
+                video_input,
+                image_input_group,
+                video_input_group,
+                image_output_group,
+                video_output_group,
+                image_output,
+                video_output,
+                status_output,
+                video_status_output,
+                alert_banner_output,
+                alert_signal_output,
+                chatbot,
+                law_prompt,
+                law_button,
+                chat_history,
+                evidence_upload,
+                clear_btn
+            ]
         )
 
-        video_input.upload(
-            fn=handle_video_upload,
-            inputs=video_input,
-            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output, final_summary_output],
-        )
-        video_input.clear(
-            fn=handle_video_clear,
-            outputs=[video_status_output, video_output, video_placeholder, alert_banner_output, alert_signal_output, final_summary_output],
-        )
-
-        # Inference Trigger Event Handlers
-        submit_btn.click(
-            fn=run_image_inference,
-            inputs=[image_input, conf_slider, chat_history, agent_state],
-            outputs=[image_output, status_output, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history, final_summary_output],
-        )
-
-        video_submit_btn.click(
-            fn=run_video_inference,
-            inputs=[video_input, video_conf_slider, chat_history, agent_state],
-            outputs=[video_output, video_status_output, video_placeholder, alert_banner_output, alert_signal_output, chatbot, law_prompt, law_button, agent_state, chat_history, final_summary_output],
+        clear_btn.click(
+            fn=handle_evidence_clear,
+            outputs=[
+                image_input,
+                video_input,
+                image_input_group,
+                video_input_group,
+                image_output_group,
+                video_output_group,
+                image_output,
+                video_output,
+                status_output,
+                video_status_output,
+                alert_banner_output,
+                alert_signal_output,
+                chatbot,
+                law_prompt,
+                law_button,
+                chat_history,
+                evidence_upload,
+                clear_btn
+            ]
         )
 
         # Chatbot prompt/button event handlers
@@ -1523,19 +1489,6 @@ def build_app():
             fn=generate_chat_reply,
             inputs=[chat_history, agent_state],
             outputs=[chatbot, chat_history, law_prompt, law_button]
-        )
-
-        # Confidence Sliders Parameter Updates
-        conf_slider.change(
-            fn=build_threshold_readout,
-            inputs=conf_slider,
-            outputs=threshold_readout,
-        )
-
-        video_conf_slider.change(
-            fn=build_threshold_readout,
-            inputs=video_conf_slider,
-            outputs=video_threshold_readout,
         )
 
     demo._deprecated_theme = blue_theme

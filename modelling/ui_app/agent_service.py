@@ -7,7 +7,10 @@ class APIKeyManager:
     def __init__(self):
         self.keys = [
             "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",
-            "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"
+            "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",
+            "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",
+            "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",
+            "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"
         ]
         self.current_index = 0
 
