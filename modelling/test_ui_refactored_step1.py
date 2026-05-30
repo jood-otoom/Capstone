@@ -110,7 +110,66 @@ except Exception as e:
 
 
 
-# predict_accident_gui moved to combined_pipeline.py
+def predict_accident_gui(input_image: np.ndarray, conf_threshold: float):
+    if pipeline.detector is None:
+        return input_image, build_status_banner(
+            title="Model unavailable",
+            message="No object detection model was loaded. Please check the configured model paths.",
+            tone="alert",
+            icon="&#10005;",
+        ), build_alert_banner("error", "image"), build_alert_signal(False, "error", "image")
+
+    if input_image is None:
+        return None, build_status_banner(
+            title="Image required",
+            message="Upload a road image to run accident detection inference.",
+            tone="neutral",
+            icon="&#8682;",
+        ), build_alert_banner("standby", "image"), build_alert_signal(False, "idle", "image")
+
+    try:
+        # Run sequential pipeline
+        res = pipeline.process_image(input_image, conf_threshold)
+        
+        accident_detected = res["accident_detected"]
+        det_conf = res["detection_confidence"]
+        sev_label = res["severity_label"]
+        sev_conf = res["severity_confidence"]
+        annotated_image = res["annotated_image"]
+        num_detections = res["num_detections"]
+        
+        status_html = build_pipeline_status_banner(
+            accident_detected=accident_detected,
+            detection_conf=det_conf,
+            severity_label=sev_label,
+            severity_conf=sev_conf,
+            num_detections=num_detections,
+            source="image"
+        )
+        
+        pipeline.last_det_conf = det_conf
+        pipeline.last_sev_label = sev_label
+        pipeline.last_sev_conf = sev_conf
+
+        if accident_detected:
+            alert_html = build_alert_banner("active", "image")
+            alert_signal = build_alert_signal(True, "accident", "image")
+        else:
+            alert_html = build_alert_banner("clear", "image")
+            alert_signal = build_alert_signal(False, "clear", "image")
+            
+        return annotated_image, status_html, alert_html, alert_signal
+        
+    except Exception as e:
+        print(f"[IMAGE] Inference failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return input_image, build_status_banner(
+            title="Inference failed",
+            message=f"Error occurred during image inference: {str(e)}",
+            tone="alert",
+            icon="&#10005;",
+        ), build_alert_banner("error", "image"), build_alert_signal(False, "error", "image")
 
 
 
