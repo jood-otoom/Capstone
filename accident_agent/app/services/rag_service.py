@@ -96,58 +96,6 @@ class RAGService:
         
         return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
-# import os
-# import glob
-# from langchain_community.document_loaders import PDFPlumberLoader
-# from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from langchain_community.vectorstores import FAISS
-# from langchain_huggingface import HuggingFaceEmbeddings
-# from app.core.config import settings
-
-# class RAGService:
-#     def __init__(self):
-#         print(f"Loading multilingual embedding model: {settings.EMBEDDING_MODEL}...")
-#         self.embeddings = HuggingFaceEmbeddings(model_name=settings.EMBEDDING_MODEL)
-#         self.vectorstore_path = settings.VECTORSTORE_PATH
-#         self.docs_dir = settings.DOCS_DIR
-        
-#     def ingest_pdfs(self):
-#         """Scans the docs folder and ingests all PDFs, preserving tables."""
-#         pdf_files = glob.glob(os.path.join(self.docs_dir, "*.pdf"))
-        
-#         if not pdf_files:
-#             print(f"Error: No PDFs found in {self.docs_dir}/")
-#             return
-
-#         all_docs = []
-#         for pdf_path in pdf_files:
-#             print(f"Parsing and extracting tables from: {pdf_path}...")
-#             # PDFPlumber retains physical layout, crucial for legal tables
-#             loader = PDFPlumberLoader(pdf_path)
-#             all_docs.extend(loader.load())
-        
-#         print("Splitting bilingual text into chunks...")
-#         # Chunk size is slightly larger to avoid breaking up tables
-#         text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-#         splits = text_splitter.split_documents(all_docs)
-        
-#         print("Creating Unified Multilingual Vector Store locally...")
-#         vectorstore = FAISS.from_documents(splits, self.embeddings)
-#         vectorstore.save_local(self.vectorstore_path)
-#         print(f"Successfully saved FAISS index to {self.vectorstore_path}")
-
-#     def get_relevant_law(self, query="right of way intersection roundabout rear-end collision rules"):
-#         if not os.path.exists(self.vectorstore_path):
-#             return "[System Warning: Vector database not built. Run ingestion first.]"
-            
-#         vectorstore = FAISS.load_local(
-#             self.vectorstore_path, 
-#             self.embeddings, 
-#             allow_dangerous_deserialization=True
-#         )
-        
-#         # Pull top 5 most relevant chunks to ensure we catch rules from both languages
-#         retriever = vectorstore.as_retriever(search_kwargs={"k": 5}) 
-#         docs = retriever.invoke(query)
-        
-#         return "\n\n---\n\n".join([doc.page_content for doc in docs])
+if __name__ == "__main__":
+    rag = RAGService()
+    rag.ingest_pdfs()    

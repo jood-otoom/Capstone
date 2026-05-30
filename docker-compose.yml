@@ -1,0 +1,60 @@
+# ============================================================
+# AcciEye — Docker Compose
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  accie-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: accie-app
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      # ── All 6 OpenRouter keys (APIKeyManager rotates through them)
+      - OPENROUTER_API_KEY_1=${OPENROUTER_API_KEY_1}
+      - OPENROUTER_API_KEY_2=${OPENROUTER_API_KEY_2}
+      - OPENROUTER_API_KEY_3=${OPENROUTER_API_KEY_3}
+      - OPENROUTER_API_KEY_4=${OPENROUTER_API_KEY_4}
+      - OPENROUTER_API_KEY_5=${OPENROUTER_API_KEY_5}
+      - OPENROUTER_API_KEY_6=${OPENROUTER_API_KEY_6}
+      - HF_TOKEN=${HF_TOKEN}
+      # ── Gradio
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+      # ── Ultralytics / HuggingFace cache dirs
+      - YOLO_CONFIG_DIR=/app/.ultralytics
+      - HF_HOME=/app/.cache/huggingface
+      # ── Your existing n8n cloud webhook (no Docker n8n service needed)
+      - INCIDENT_WEBHOOK_URL=${INCIDENT_WEBHOOK_URL}
+      - ENABLE_INCIDENT_WEBHOOK=${ENABLE_INCIDENT_WEBHOOK}
+      - TIMEZONE=${TIMEZONE}
+    volumes:
+      # Trained model weights — read-only from host
+      - ./model_weights/detection:/app/model_weights/detection:ro
+      - ./model_weights/classification:/app/model_weights/classification:ro
+      # Pre-built FAISS vector store — read-only from host (already built)
+      - ./accident_agent/data/vectorstore:/app/accident_agent/data/vectorstore:ro
+      # Legal PDFs — read-only from host
+      - ./accident_agent/docs:/app/accident_agent/docs:ro
+      # Runtime data (grows over time)
+      - incident_data:/app/incident_logs
+      - detect_runs:/app/runs/detect
+      # HuggingFace model cache (sentence-transformers)
+      - hf_cache:/app/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  incident_data:
+  detect_runs:
+  hf_cache:

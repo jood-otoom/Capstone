@@ -102,4 +102,9 @@ class AccidentAgent:
         self.chat_history.append(HumanMessage(content=user_message))
         response = self.llm.invoke(self.chat_history)
         self.chat_history.append(AIMessage(content=response.content))
+<<<<<<< HEAD
         return response.content
+=======
+        return response.content
+    
+>>>>>>> dcd2c80127c3cebb58a29cfe7eb6913f565d56d6

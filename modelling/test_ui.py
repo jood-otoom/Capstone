@@ -6,6 +6,9 @@ import csv
 from html import escape
 import time
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 # Fallback lightweight installation check
 try:
     import gradio as gr
@@ -1197,7 +1200,7 @@ def build_app():
                     # IMAGE PREVIEW GROUP
                     with gr.Column(visible=True) as image_input_group:
                         image_input = gr.Image(
-                            type="numpy",
+                            type="filepath",
                             label="Road Image Preview",
                             elem_classes="image-shell",
                             elem_id="image-preview-input",
@@ -1205,7 +1208,7 @@ def build_app():
                         )
                     
                     # VIDEO PREVIEW GROUP
-                    with gr.Column(visible=False) as video_input_group:
+                    with gr.Column(visible=True) as video_input_group:
                         video_input = gr.Video(
                             label="Road Video Preview",
                             elem_classes="image-shell",
@@ -1275,7 +1278,7 @@ def build_app():
                             elem_id="image-status-region",
                         )
                         image_output = gr.Image(
-                            type="numpy",
+                            type="filepath",
                             label="Rendered Output with Bounding Boxes",
                             elem_classes="image-shell",
                             elem_id="image-preview-output",
@@ -1500,7 +1503,7 @@ if __name__ == "__main__":
     app.queue()  # Enable queuing for robust generator/yield processing!
     try:
         app.launch(
-            share=False,
+            share=True,
             server_name="127.0.0.1",
             server_port=7860,
             head=build_alert_controller_head(),
@@ -1508,7 +1511,7 @@ if __name__ == "__main__":
     except OSError:
         print("Port 7860 is occupied. Launching on an automatically allocated free port...")
         app.launch(
-            share=False,
+            share=True,
             server_name="127.0.0.1",
             head=build_alert_controller_head(),
         )

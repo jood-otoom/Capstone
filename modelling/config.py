@@ -76,7 +76,7 @@ def detect_project_root(start: Path | None = None) -> Path:
 
     candidates = [start, *start.parents]
     for candidate in candidates:
-        if (candidate / "data_processed").exists():
+        if (candidate / "Processed_Data").exists():
             return candidate
     return start.parent
 
@@ -144,7 +144,7 @@ def get_mode_config(mode: str, stage: str = "stage1", extended: bool = False) ->
     report_md = mode_root / "final_experiment_report.md"
 
     device = detect_device()
-    dataset_dir = project_root / "data_processed"
+    dataset_dir = project_root / "Processed_Data"
     workers = 4
     fraction = None
 

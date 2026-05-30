@@ -81,17 +81,17 @@ def run_dataset_check() -> dict[str, Path]:
     output_root.mkdir(parents=True, exist_ok=True)
 
     datasets = {
-        "data_processed": project_root / "data_processed",
+        "Processed_Data": project_root / "Processed_Data",
     }
 
     required_paths = [
-        "data_processed/train/images",
-        "data_processed/train/labels",
-        "data_processed/valid/images",
-        "data_processed/valid/labels",
-        "data_processed/test/images",
-        "data_processed/test/labels",
-        "data_processed/data.yaml",
+        "Processed_Data/train/images",
+        "Processed_Data/train/labels",
+        "Processed_Data/valid/images",
+        "Processed_Data/valid/labels",
+        "Processed_Data/test/images",
+        "Processed_Data/test/labels",
+        "Processed_Data/data.yaml",
     ]
 
     required_rows: list[dict[str, str]] = []
