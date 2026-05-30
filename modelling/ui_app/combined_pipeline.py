@@ -64,7 +64,7 @@ class AccidentSeverityPipeline:
     def detect_accident(self, frame, conf_threshold):
         if self.detector is None:
             raise RuntimeError("Detection model is not loaded.")
-        results = self.detector(frame, conf=conf_threshold, verbose=False)
+        results = self.detector(frame, conf=conf_threshold, max_det=1, verbose=False)
         accident_detected = detect_accident_from_collection(results)
         
         max_conf = 0.0
@@ -617,6 +617,7 @@ def run_video_inference(video_path: str | None, confidence_threshold: float, cha
         results = pipeline.detector.predict(
             source=video_path,
             conf=confidence_threshold,
+            max_det=1,
             save=True,
             project=str(project_dir),
             name=name_dir,
@@ -878,6 +879,7 @@ def predict_accident_video_gui(video_path: str, conf_threshold: float):
     results = pipeline.detector.predict(
         source=video_path,
         conf=conf_threshold,
+        max_det=1,
         save=True,
         project=str(project_dir),
         name=name_dir,

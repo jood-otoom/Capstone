@@ -1,0 +1,69 @@
+# ============================================================
+# .dockerignore — exclude files from Docker build context
+# Keeps the image lean and avoids leaking secrets
+# ============================================================
+
+# Git
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Environment secrets — NEVER bake into the image
+.env
+*.env
+
+# Ultralytics local config
+.ultralytics/
+
+# HuggingFace cache (huge — mount as volume instead)
+.cache/
+
+# Large trained model weights (mount as volume instead)
+runs/
+full_runs/
+*.pt
+*.onnx
+*.engine
+
+# Incident frames (runtime data — mount as volume)
+incident_logs/
+
+# FAISS vector store (runtime data — mount as volume)
+accident_agent/data/vectorstore/
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation build artifacts
+docs/_build/
+*.pdf
+
+# Test data and notebooks
+*.ipynb
+data-v1/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log

@@ -1,0 +1,11 @@
+# Define the root directory of your processed dataset
+path: ./processed_dataset 
+
+# Relative paths to the image folders
+train: train/images
+val: valid/images  # Changed to 'valid' to match our script's output
+test: test/images
+
+# Classes
+nc: 1
+names: ['accident']
