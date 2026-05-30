@@ -5,7 +5,7 @@ __pycache__/
 *.pyd
 .venv/
 venv/
-env/
+.env/
 yolov8_env/
 
 # Jupyter

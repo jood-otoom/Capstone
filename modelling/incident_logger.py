@@ -9,7 +9,7 @@
 
 # # Webhook configuration
 # ENABLE_INCIDENT_WEBHOOK = False
-# INCIDENT_WEBHOOK_URL = "https://ounawa.app.n8n.cloud/webhook-test/accident-alert"
+# INCIDENT_WEBHOOK_URL = "https://ounawa.app.n8n.cloud/webhook/accident-alert"
 
 # def generate_incident_id() -> str:
 #     """Generates a unique incident identifier."""
@@ -209,8 +209,35 @@ from pathlib import Path
 
 
 # Webhook configuration
-ENABLE_INCIDENT_WEBHOOK = True
-INCIDENT_WEBHOOK_URL = "https://ounawa.app.n8n.cloud/webhook-test/accident-alert"
+from dotenv import load_dotenv
+
+# Resolve dynamic project root path to load .env
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+env_path = PROJECT_ROOT / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+else:
+    load_dotenv()
+
+ENABLE_INCIDENT_WEBHOOK = os.getenv("ENABLE_INCIDENT_WEBHOOK", "true").lower() == "true"
+
+ACCIDENT_ALERT_WEBHOOK_URL = os.getenv(
+    "ACCIDENT_ALERT_WEBHOOK_URL",
+    os.getenv("INCIDENT_WEBHOOK_URL", "https://ounawa.app.n8n.cloud/webhook/accident-alert")
+)
+
+# For backward compatibility if other modules access INCIDENT_WEBHOOK_URL
+INCIDENT_WEBHOOK_URL = ACCIDENT_ALERT_WEBHOOK_URL
+
+# Safe diagnostic print
+from urllib.parse import urlparse
+try:
+    parsed = urlparse(ACCIDENT_ALERT_WEBHOOK_URL)
+    masked_url = f"{parsed.scheme}://{parsed.netloc[:3]}...{parsed.netloc[-4:]}{parsed.path}"
+except Exception:
+    masked_url = "https://.../accident-alert"
+
+print(f"[Incident Webhook] Configured webhook URL: {masked_url} (Enabled: {ENABLE_INCIDENT_WEBHOOK})")
  
 def generate_incident_id() -> str:
     """Generates a unique incident identifier."""
@@ -321,6 +348,15 @@ def send_incident_webhook(payload: dict, image_path: str = None) -> str:
     if not ENABLE_INCIDENT_WEBHOOK:
         return "disabled"
        
+    # Safe diagnostic print at runtime
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(ACCIDENT_ALERT_WEBHOOK_URL)
+        masked_url = f"{parsed.scheme}://{parsed.netloc[:3]}...{parsed.netloc[-4:]}{parsed.path}"
+    except Exception:
+        masked_url = "https://.../accident-alert"
+    print(f"[Incident Webhook] Dispatching incident alert payload to: {masked_url}")
+
     try:
         # Convert all payload fields to string for standard form-data post
         form_data = {k: str(v) if v is not None else "" for k, v in payload.items()}
@@ -331,7 +367,7 @@ def send_incident_webhook(payload: dict, image_path: str = None) -> str:
                 files = {"image": (Path(image_path).name, img_file, "image/jpeg")}
                 
                 response = requests.post(
-                    INCIDENT_WEBHOOK_URL,
+                    ACCIDENT_ALERT_WEBHOOK_URL,
                     data=form_data,
                     files=files,
                     timeout=10
@@ -339,7 +375,7 @@ def send_incident_webhook(payload: dict, image_path: str = None) -> str:
 
         else:
             response = requests.post(
-                INCIDENT_WEBHOOK_URL,
+                ACCIDENT_ALERT_WEBHOOK_URL,
                 data=form_data,
                 timeout=10
             )
