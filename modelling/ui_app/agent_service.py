@@ -13,12 +13,12 @@ class APIKeyManager:
         # Try reading keys from environment first (Docker / .env in project root).
         # Falls back to the hardcoded strings so local dev needs zero changes.
         env_keys = [
-            os.getenv("OPENROUTER_API_KEY_1", "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"),
-            os.getenv("OPENROUTER_API_KEY_2", "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"),
-            os.getenv("OPENROUTER_API_KEY_3", "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"),
-            os.getenv("OPENROUTER_API_KEY_4", "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"),
-            os.getenv("OPENROUTER_API_KEY_5", "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"),
-            os.getenv("OPENROUTER_API_KEY_6", "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"),   # 6th slot — no hardcoded fallback
+            os.getenv("OPENROUTER_API_KEY_1", "sk-or-v1"),
+            os.getenv("OPENROUTER_API_KEY_2", "sk-or-v1"),
+            os.getenv("OPENROUTER_API_KEY_3", "sk-or-v1"),
+            os.getenv("OPENROUTER_API_KEY_4", "sk-or-v1"),
+            os.getenv("OPENROUTER_API_KEY_5", "sk-or-v1"),
+            os.getenv("OPENROUTER_API_KEY_6", "sk-or-v1"),   # 6th slot — no hardcoded fallback
         ]
         # Drop empty or unfilled placeholder values
         self.keys = [k for k in env_keys if k and not k.startswith("sk-or-v1-your")]
@@ -54,7 +54,7 @@ api_key_manager = APIKeyManager()
 # Set the initial key in the environment so both the UI layer and the
 # accident_agent layer start with the same key.
 os.environ["OPENROUTER_API_KEY"] = api_key_manager.get_current_key()
-os.environ["HF_TOKEN"] = os.getenv("HF_TOKEN", "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")
+os.environ["HF_TOKEN"] = os.getenv("HF_TOKEN", "hf_your-token-here")  # Ensure HF_TOKEN is also set for the agent
 
 
 def safe_agent_call(agent, method_name, *args, **kwargs):
