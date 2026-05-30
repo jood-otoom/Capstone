@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
+.env/
 venv/
 env/
 yolov8_env/
