@@ -18,5 +18,5 @@ if _IN_DOCKER:
     DETECTION_MODEL_DIR    = Path("/app/model_weights/detection")
     CLASSIFICATION_MODEL_DIR = Path("/app/model_weights/classification")
 else:
-    DETECTION_MODEL_DIR    = Path(r"C:\Desktop\Capstone\full_runs\train_runs\yolo26m_lr0001_sgd")
-    CLASSIFICATION_MODEL_DIR = Path(r"C:\Desktop\Capstone\Classification\best_severity_classifier")
+    DETECTION_MODEL_DIR    = PROJECT_ROOT / "full_runs" / "train_runs" / "yolo26m_lr0001_sgd"
+    CLASSIFICATION_MODEL_DIR = PROJECT_ROOT / "Classification" / "best_severity_classifier"
