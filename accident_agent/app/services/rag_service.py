@@ -96,6 +96,3 @@ class RAGService:
         
         return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
-if __name__ == "__main__":
-    rag = RAGService()
-    rag.ingest_pdfs()    

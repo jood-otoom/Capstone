@@ -11,26 +11,24 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 class APIKeyManager:
     def __init__(self):
+        # Try reading keys from environment first (Docker / .env in project root).
+        # Falls back to the hardcoded strings so local dev needs zero changes.
         env_keys = []
-
         primary_key = os.getenv("OPENROUTER_API_KEY")
         if primary_key:
             env_keys.append(primary_key)
-
         for idx in range(1, 7):
             env_keys.append(os.getenv(f"OPENROUTER_API_KEY_{idx}", ""))
 
-        self.keys = [
-            key
-            for key in env_keys
-            if key and not key.startswith("sk-or-v1-your") and key != "sk-or-v1"
-        ]
+        # Drop empty or unfilled placeholder values
+        self.keys = [k for k in env_keys if k and not k.startswith("sk-or-v1-your") and k != "sk-or-v1"]
+        if not self.keys:
+            raise RuntimeError("No OpenRouter API keys found. Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_1..6 in .env")
         self.current_index = 0
         print(f"[APIKeyManager] Loaded {len(self.keys)} OpenRouter keys.")
 
     def has_keys(self) -> bool:
         return bool(self.keys)
-
     def get_current_key(self) -> str:
         if not self.keys:
             raise RuntimeError("No OpenRouter API keys found. Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_1..6 in .env")
@@ -59,12 +57,11 @@ def _push_key_to_agent_config(key: str) -> None:
 
 api_key_manager = APIKeyManager()
 
+# Set the initial key in the environment so both the UI layer and the
+# accident_agent layer start with the same key.
 if api_key_manager.has_keys():
     os.environ["OPENROUTER_API_KEY"] = api_key_manager.get_current_key()
-
-hf_token = os.getenv("HF_TOKEN")
-if hf_token:
-    os.environ["HF_TOKEN"] = hf_token
+os.environ["HF_TOKEN"] = os.getenv("HF_TOKEN", "")
 
 
 def safe_agent_call(agent, method_name, *args, **kwargs):
