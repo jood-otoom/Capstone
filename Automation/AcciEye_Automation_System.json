@@ -1,0 +1,359 @@
+{
+  "name": "AcciEye_Automation_System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "accident-alert",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        176,
+        -64
+      ],
+      "id": "ef6c0eae-1f4d-423f-a5f2-d5190240cd63",
+      "name": "Webhook",
+      "webhookId": "f121b140-cd67-4e47-b31f-fdbe87ba8fb8"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "73457e7c-94aa-4b4d-8ff3-2a6ec1651349",
+              "leftValue": "={{ $node[\"Webhook\"].json[\"body\"][\"severity\"] }}",
+              "rightValue": "severe-accident",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        928,
+        -48
+      ],
+      "id": "1601f578-33b2-403c-9c9f-58bc6e7ef737",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "image",
+        "name": "={{ 'file_' + new Date().getTime() + '.png' }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $node[\"Webhook\"].json[\"body\"][\"severity\"].includes('severe') ? '1VDYiyod63ECH49ivM5hBF_oiQxLm8F2t' : $node[\"Webhook\"].json[\"body\"][\"severity\"].includes('moderate') ? '11oE-c7X5fXF4J0K8bmraz8jINpnDe7aK' : '1TNCD8XoN9Mty4VIw9gtOrZN4SIc509x4' }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        368,
+        64
+      ],
+      "id": "4490853d-d6b9-4452-b953-0fe954403f15",
+      "name": "Upload file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "jmcioRdheZXnfGOZ",
+          "name": "Google Drive OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "19Ba1uLO9ADE_-UONdY1tK4Ce_Xv0uXU1BGbpSiTRXhY",
+          "mode": "list",
+          "cachedResultName": "AcciEye_Incident_Logs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/19Ba1uLO9ADE_-UONdY1tK4Ce_Xv0uXU1BGbpSiTRXhY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/19Ba1uLO9ADE_-UONdY1tK4Ce_Xv0uXU1BGbpSiTRXhY/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "incident_id": "={{ $node[\"Webhook\"].json[\"body\"][\"incident_id\"] }}",
+            "severity": "={{ $node[\"Webhook\"].json[\"body\"][\"severity\"] }}",
+            "location": "={{ $node[\"Webhook\"].json[\"body\"][\"location\"] }}",
+            "escalation_status": "={{ $node[\"Webhook\"].json[\"body\"][\"escalation_status\"] }}",
+            "photo_storage_category": "={{ $node[\"Webhook\"].json[\"body\"][\"severity\"].includes('severe') ? 'Severe' : $node[\"Webhook\"].json[\"body\"][\"severity\"].includes('moderate') ? 'Moderate' : 'Minor' }}",
+            "accident_photo_link": "={{$node[\"Upload file\"].json[\"webViewLink\"]}}",
+            "location_label": "={{ $node[\"Webhook\"].json[\"body\"][\"location_label\"] }}",
+            "date": "={{ $node[\"Webhook\"].json[\"body\"][\"date\"] }}",
+            "time": "={{ $node[\"Webhook\"].json[\"body\"][\"time\"] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "incident_id",
+              "displayName": "incident_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "severity",
+              "displayName": "severity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location_label",
+              "displayName": "location_label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "image_file_id",
+              "displayName": "image_file_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "accident_photo_link",
+              "displayName": "accident_photo_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "photo_storage_category",
+              "displayName": "photo_storage_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "escalation_status",
+              "displayName": "escalation_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        544,
+        -48
+      ],
+      "id": "120cbc17-d550-43b2-ab35-c0974cd58890",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "xhOkkNmEmII0OTgU",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "5353223874",
+        "binaryData": true,
+        "binaryPropertyName": "image",
+        "additionalFields": {
+          "caption": "=🚨 SEVERE TRAFFIC ACCIDENT DETECTED\n\n🆔 Incident ID:\n{{ $node[\"Webhook\"].json[\"body\"][\"incident_id\"] }}\n\n⚠ Severity:\n{{ $node[\"Webhook\"].json[\"body\"][\"severity\"] }}\n\n🕒 Time:\n\n{{ $node[\"Webhook\"].json[\"body\"][\"time\"] }}\n\n📍 Location:\n{{ $node[\"Webhook\"].json[\"body\"][\"location\"] }}\n\n📍Location Label:\n{{ $node[\"Webhook\"].json[\"body\"][\"location_label\"] }}\n\n📂 Photo Link:\n{{ $node[\"Upload file\"].json[\"webViewLink\"] }}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1168,
+        -112
+      ],
+      "id": "b07a934a-d827-4ebc-b911-25ceb97b7aac",
+      "name": "Send a photo message",
+      "webhookId": "0c35e322-1c7f-4457-8d4a-b842e602a583",
+      "credentials": {
+        "telegramApi": {
+          "id": "ALFpJAc3jIesoUqH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        736,
+        -192
+      ],
+      "id": "50c4271d-0e96-43dd-8887-b53ed718f65f",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Upload file",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a photo message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Upload file": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a photo message": {
+      "main": [
+        []
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "33e008af-f2ab-4cfa-9e0c-7a2f5c035e0d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b20610a5c2e40e4bb5545275fe5e6cfcd81df09c155f513f19dab8269e415b5d"
+  },
+  "id": "jl0ZL6EF2aON7Pz6",
+  "tags": []
+}
