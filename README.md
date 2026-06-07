@@ -280,6 +280,9 @@ This reads the `Dockerfile` and `docker-compose.yml` configs to spin up the Grad
 
 ---
 
-## 👥 Contributors & Contact
+## 👥 Contributors
 
-* **Oun Alawamleh** - AI Engineer & TALE Intelligence Developer
+* **Oun Alawamleh** - Team Leader, Image preprocessing, TALE Intelligence, Automation workflow, Docker Deployment, and Deployment.
+* **Jood Otoom** - Co-Leader, Object Detection Model & UI.
+* **Aisha Amour** - Classification Images preprocessing & Severity Model.
+* **Basema Alnazer** - Presentation Slides and Report.
